@@ -9,7 +9,7 @@ from google.genai import types
 
 app = Flask(__name__)
 
-# La API Key se lee de forma segura del servidor (nunca del código visible)
+# La API Key se lee de forma segura del servidor de Render
 API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 client = None
@@ -25,12 +25,12 @@ def escanear():
         data = request.json
         image_data = data.get("image", "")
         
-        # Decodificar la imagen que manda el navegador del usuario
+        # Decodificar la imagen que manda el navegador
         image_data = image_data.split(",")[1]
         image_bytes = base64.b64decode(image_data)
         img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
         
-        # Optimizar tamaño para velocidad
+        # Optimizar tamaño para máxima velocidad
         img.thumbnail((1920, 1080), Image.Resampling.LANCZOS)
 
         prompt = """
@@ -43,10 +43,9 @@ def escanear():
           "cabeceo": 0, "centros": 0, "control": 0, "entradas": 0, "marcaje": 0, "pases": 0, "regate": 0, "remate": 0, "tecnica": 0, "tiros_lejanos": 0,
           "penaltis": 0, "saques_esquina": 0, "saques_largos": 0, "tiros_libres": 0,
           "agresividad": 0, "anticipacion": 0, "colocacion": 0, "concentracion": 0, "decisiones": 0, "desmarques": 0, "determinacion": 0, "juego_equipo": 0, "liderazgo": 0, "sacrificio": 0, "serenidad": 0, "talento": 0, "valentia": 0, "vision": 0,
-          "aceleracion": 0, "agilidad": 0, "salto": 0, "equilibrio": 0, "fuerza": 0, "recuperacion": 0, "resistencia": 0, "velocidad": 0,
-          "radar_defensa": 0, "radar_fisico": 0, "radar_velocidad": 0, "radar_vision": 0, "radar_ataque": 0, "radar_tecnica": 0, "radar_aereo": 0, "radar_mental": 0
+          "aceleracion": 0, "agilidad": 0, "salto": 0, "equilibrio": 0, "fuerza": 0, "recuperacion": 0, "resistencia": 0, "velocidad": 0
         }
-        Si algo no se ve, pon "". Extrae los números del radar (1 al 20) directamente del gráfico poligonal. Calidad puede ser "3 estrellas", etc.
+        Si algo no se ve, pon "". Calidad puede ser "3 estrellas", etc.
         """
 
         response = client.models.generate_content(
@@ -97,6 +96,7 @@ def inicio():
                 transition: all 0.2s ease; display: flex; justify-content: center; align-items: center; gap: 10px;
             }
             .btn-scan:hover { background: linear-gradient(135deg, var(--accent-hover) 0%, #00b383 100%); transform: translateY(-2px); }
+            .btn-scan:disabled { filter: grayscale(0.5); cursor: not-allowed; transform: none; }
             
             .radar-container { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 10px; flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; padding: 20px;}
             #radarChart { width: 100%; height: 100%; max-height: 600px; display: flex; justify-content: center; align-items: center; overflow: visible; }
@@ -130,11 +130,11 @@ def inicio():
         <div class="main-layout">
             <div class="left-panel">
                 <button class="btn-scan" onclick="capturarPantalla()" id="btnScan">
-                    📸 Seleccionar FM26 y Analizar
+                    🔗 Enlazar FM26 y Analizar
                 </button>
                 <div class="radar-container">
                     <div id="radarChart"></div>
-                    <div class="status-box" id="debugText">Pulsa el botón, elige la ventana de Football Manager y se analizará solo.</div>
+                    <div class="status-box" id="debugText">Listo para enlazar el juego.</div>
                 </div>
             </div>
 
@@ -191,6 +191,11 @@ def inicio():
         </div>
 
         <script>
+            // MEMORIA DE LA VENTANA
+            let videoStream = null;
+            const videoElement = document.createElement('video');
+            videoElement.autoplay = true;
+
             const inputIds = ['cabeceo', 'centros', 'control', 'entradas', 'marcaje', 'pases', 'regate', 'remate', 'tecnica', 'tiros_lejanos', 'penaltis', 'saques_esquina', 'saques_largos', 'tiros_libres', 'agresividad', 'anticipacion', 'colocacion', 'concentracion', 'decisiones', 'desmarques', 'determinacion', 'juego_equipo', 'liderazgo', 'sacrificio', 'serenidad', 'talento', 'valentia', 'vision', 'aceleracion', 'agilidad', 'salto', 'equilibrio', 'fuerza', 'recuperacion', 'resistencia', 'velocidad'];
             let currentRadarData = {"Defensa":10, "Fisico":10, "Velocidad":10, "Vision":10, "Ataque":10, "Tecnica":10, "Juego Aereo":10, "Mental":10};
 
@@ -247,46 +252,81 @@ def inicio():
                 });
             }
 
+            // AHORA EL GRÁFICO SE CALCULA SIEMPRE MATEMÁTICAMENTE PARA QUE NUNCA FALLE
+            function recalcularRadarLocal() {
+                const v = (id) => parseInt(document.getElementById(id).value) || 10;
+                currentRadarData = {
+                    "Defensa": Math.round((v('marcaje') + v('entradas') + v('colocacion')) / 3),
+                    "Fisico": Math.round((v('fuerza') + v('resistencia') + v('equilibrio') + v('salto')) / 4),
+                    "Velocidad": Math.round((v('aceleracion') + v('velocidad') + v('agilidad')) / 3),
+                    "Vision": Math.round((v('vision') + v('decisiones') + v('anticipacion') + v('desmarques')) / 4),
+                    "Ataque": Math.round((v('remate') + v('regate') + v('tiros_lejanos')) / 3),
+                    "Tecnica": Math.round((v('tecnica') + v('pases') + v('control') + v('centros') + v('cabeceo')) / 5),
+                    "Juego Aereo": Math.round((v('salto') + v('cabeceo')) / 2),
+                    "Mental": Math.round((v('determinacion') + v('concentracion') + v('liderazgo') + v('serenidad') + v('valentia') + v('juego_equipo') + v('sacrificio')) / 7)
+                };
+                drawRadar(currentRadarData);
+            }
+
             async function capturarPantalla() {
                 const status = document.getElementById('debugText');
                 const btn = document.getElementById('btnScan');
+                
                 try {
-                    status.innerText = "Selecciona la ventana de Football Manager en el selector del navegador...";
-                    const stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "always" }, audio: false });
-                    const track = stream.getVideoTracks()[0];
-                    
-                    const imageCapture = new ImageCapture(track);
-                    const bitmap = await imageCapture.grabFrame();
-                    
-                    track.stop(); // Apagar la compartición de pantalla inmediatamente
-
-                    const canvas = document.createElement('canvas');
-                    canvas.width = bitmap.width;
-                    canvas.height = bitmap.height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(bitmap, 0, 0);
-                    const base64Image = canvas.toDataURL('image/jpeg', 0.85);
-
-                    status.innerText = "Enviando captura a la IA...";
                     btn.disabled = true;
+                    btn.style.opacity = "0.7";
+
+                    // Si es la primera vez, pide permiso y enlaza la ventana
+                    if (!videoStream || !videoStream.active) {
+                        status.innerText = "Selecciona la ventana de Football Manager en el panel que acaba de salir...";
+                        videoStream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "never" }, audio: false });
+                        videoElement.srcObject = videoStream;
+                        
+                        // Esperar a que el vídeo esté listo para capturar
+                        await new Promise(resolve => videoElement.onplaying = resolve);
+                        
+                        // Si el usuario deja de compartir la pantalla desde el aviso del navegador
+                        videoStream.getVideoTracks()[0].onended = () => {
+                            videoStream = null;
+                            btn.innerHTML = "🔗 Enlazar FM26 y Analizar";
+                        };
+                        
+                        // Cambiamos el texto del botón para que sepa que ya está enlazado
+                        btn.innerHTML = "📸 Analizar de nuevo (Al instante)";
+                    }
+
+                    status.innerText = "Tomando fotograma instantáneo y enviando a la IA...";
+
+                    // Capturamos el fotograma directamente de la conexión abierta (sin retardo)
+                    const canvas = document.createElement('canvas');
+                    canvas.width = videoElement.videoWidth;
+                    canvas.height = videoElement.videoHeight;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+                    const base64Image = canvas.toDataURL('image/jpeg', 0.85);
 
                     const res = await fetch('/escanear', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ image: base64Image })
                     });
+                    
                     const response = await res.json();
                     btn.disabled = false;
+                    btn.style.opacity = "1";
 
                     if(response.status === "ok") {
-                        status.innerText = "✅ ¡Análisis completado con éxito!";
+                        status.innerText = "✅ ¡Análisis completado al instante!";
                         actualizarUI(response.data);
                     } else {
                         status.innerText = "❌ Error: " + response.message;
                     }
                 } catch (err) {
                     btn.disabled = false;
-                    status.innerText = "⚠️ Cancelado o error de captura: " + err.message;
+                    btn.style.opacity = "1";
+                    videoStream = null;
+                    btn.innerHTML = "🔗 Enlazar FM26 y Analizar";
+                    status.innerText = "⚠️ Cancelado o error de captura. Vuelve a intentarlo.";
                 }
             }
 
@@ -310,21 +350,13 @@ def inicio():
                     }
                 });
                 
-                currentRadarData = {
-                    "Defensa": parseInt(data.radar_defensa) || 10,
-                    "Fisico": parseInt(data.radar_fisico) || 10,
-                    "Velocidad": parseInt(data.radar_velocidad) || 10,
-                    "Vision": parseInt(data.radar_vision) || 10,
-                    "Ataque": parseInt(data.radar_ataque) || 10,
-                    "Tecnica": parseInt(data.radar_tecnica) || 10,
-                    "Juego Aereo": parseInt(data.radar_aereo) || 10,
-                    "Mental": parseInt(data.radar_mental) || 10
-                };
-                drawRadar(currentRadarData);
+                // Forzamos el recálculo matemático del radar basándonos en las barras recién actualizadas
+                recalcularRadarLocal();
             }
 
             function updateVal(slider, displayId) {
                 document.getElementById(displayId).innerText = slider.value;
+                recalcularRadarLocal();
             }
 
             drawRadar(currentRadarData);
