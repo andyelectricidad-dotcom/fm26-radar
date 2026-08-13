@@ -47,7 +47,8 @@ def escanear():
                     ],
                 }
             ],
-            model="llama-3.2-11b-vision-preview",
+            # ¡AQUÍ ESTÁ EL CAMBIO AL NUEVO MODELO DE GROQ!
+            model="qwen/qwen3.6-27b",
             response_format={"type": "json_object"},
             temperature=0,
         )
