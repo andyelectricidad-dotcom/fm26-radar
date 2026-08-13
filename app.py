@@ -21,7 +21,7 @@ def escanear():
         data = request.json
         image_data = data.get("image", "")
         
-        # PROCESADO EQUILIBRADO: Recuperamos el color (RGB) para que la IA lea mejor los colores de los atributos
+        # PROCESADO EQUILIBRADO
         header, encoded = image_data.split(",", 1)
         image_bytes = base64.b64decode(encoded)
         img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
@@ -36,7 +36,7 @@ def escanear():
 
         prompt = """Extrae perfil y los 36 atributos de esta imagen de FM26. 
         Lee con cuidado para no confundir números similares (ej. 6 y 16, 8 y 9).
-        Devuelve SOLO el código JSON. Estructura exacta:
+        Devuelve SOLO código JSON válido. Sin texto extra. Estructura exacta:
         {"nombre":"","nacionalidad":"","valor":"","edad":"","equipo":"","salario":"","contrato":"","calidad":"","cabeceo":0,"centros":0,"control":0,"entradas":0,"marcaje":0,"pases":0,"regate":0,"remate":0,"tecnica":0,"tiros_lejanos":0,"penaltis":0,"saques_esquina":0,"saques_largos":0,"tiros_libres":0,"agresividad":0,"anticipacion":0,"colocacion":0,"concentracion":0,"decisiones":0,"desmarques":0,"determinacion":0,"juego_equipo":0,"liderazgo":0,"sacrificio":0,"serenidad":0,"talento":0,"valentia":0,"vision":0,"aceleracion":0,"agilidad":0,"salto":0,"equilibrio":0,"fuerza":0,"recuperacion":0,"resistencia":0,"velocidad":0}
         Si un dato no está, pon 0 o ""."""
 
@@ -50,19 +50,25 @@ def escanear():
                     ],
                 }
             ],
-            model="qwen/qwen3.6-27b",
+            # Usamos el modelo de 90B: Mucho más inteligente y exacto formateando datos
+            model="llama-3.2-90b-vision-preview",
             temperature=0,
-            # Eliminado: response_format={"type": "json_object"} para evitar el error 400
         )
 
         respuesta_texto = chat_completion.choices[0].message.content
         
-        # Nuestro filtro de seguridad a prueba de balas
+        # Filtro de seguridad mejorado para extraer el bloque JSON
         match = re.search(r'\{.*\}', respuesta_texto, re.DOTALL)
-        if match:
-            respuesta_texto = match.group(0)
-
-        return jsonify({"status": "ok", "data": json.loads(respuesta_texto)})
+        json_puro = match.group(0) if match else respuesta_texto
+        
+        try:
+            # Intentamos leer el JSON
+            datos = json.loads(json_puro)
+            return jsonify({"status": "ok", "data": datos})
+        except json.JSONDecodeError:
+            # Si la IA se salta las reglas y rompe el JSON, te mostramos exactamente qué dijo para investigar
+            return jsonify({"status": "error", "message": f"Fallo de la IA al escribir el JSON. Respuesta cruda: {json_puro}"})
+            
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
 
@@ -74,7 +80,7 @@ def inicio():
     <head>
         <meta charset="UTF-8">
         <title>FM26 - Tactical Web HUD</title>
-        <script src="[https://d3js.org/d3.v7.min.js](https://d3js.org/d3.v7.min.js)"></script>
+        <script src="https://d3js.org/d3.v7.min.js"></script>
         <style>
             :root { --bg-main: #06090e; --bg-panel: #0d131d; --accent: #00e6a8; --accent-hover: #00ffbc; --text-main: #e1e4e8; --text-muted: #8b949e; --border: #1f293d; }
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-main); color: var(--text-main); margin: 0; padding: 2vh 2vw; height: 96vh; display: flex; flex-direction: column; }
@@ -132,12 +138,11 @@ def inicio():
                 </button>
                 <div class="radar-container">
                     <div id="radarChart"></div>
-                    <div class="status-box" id="debugText">Listo para enlazar el juego. (Precisión + Velocidad)</div>
+                    <div class="status-box" id="debugText">Listo para enlazar el juego. (Precisión 90B)</div>
                 </div>
             </div>
 
             <div class="right-panel">
-                <!-- Columna Izquierda: Técnico (10) + Físico (8) = 18 items -->
                 <div class="col">
                     <div class="category-box">
                         <h4>⚽ Técnico</h4>
@@ -165,7 +170,6 @@ def inicio():
                     </div>
                 </div>
 
-                <!-- Columna Derecha: Mental (14) + Balón Parado (4) = 18 items -->
                 <div class="col">
                     <div class="category-box">
                         <h4>🧠 Mental</h4>
@@ -291,7 +295,7 @@ def inicio():
                             btn.innerHTML = "⚡ Enlazar FM26 y Analizar";
                         };
                         
-                        btn.innerHTML = "⚡ Analizar (Alta Precisión)";
+                        btn.innerHTML = "⚡ Analizar (Precisión 90B)";
                     }
 
                     status.innerText = "Extrayendo atributos...";
@@ -321,7 +325,7 @@ def inicio():
                         status.innerText = `✅ ¡Análisis completado en ${tiempo}s!`;
                         actualizarUI(response.data);
                     } else {
-                        status.innerText = "❌ Error: " + response.message;
+                        status.innerText = "❌ " + response.message;
                     }
                 } catch (err) {
                     btn.disabled = false;
