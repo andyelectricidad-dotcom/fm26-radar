@@ -5,17 +5,18 @@ import json
 import base64
 import io
 import re
-from groq import Groq
+from google import genai
+from google.genai import types
 
 app = Flask(__name__)
 
-API_KEY = os.environ.get("GROQ_API_KEY", "")
-client = Groq(api_key=API_KEY) if API_KEY else None
+API_KEY = os.environ.get("GEMINI_API_KEY", "")
+client = genai.Client(api_key=API_KEY) if API_KEY else None
 
 @app.route('/escanear', methods=['POST'])
 def escanear():
     if not client:
-        return jsonify({"status": "error", "message": "API Key no configurada en Render."})
+        return jsonify({"status": "error", "message": "API Key de Gemini no configurada en Render."})
     
     try:
         data = request.json
@@ -25,50 +26,35 @@ def escanear():
         image_bytes = base64.b64decode(encoded)
         img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
         
-        # EL CAMBIO CLAVE: Mantenemos la resolución en Full HD para que los números no se pixelen
-        img.thumbnail((1920, 1080), Image.Resampling.LANCZOS)
-        
-        buffered = io.BytesIO()
-        # Subimos la calidad al 95% para que los bordes del texto sean totalmente nítidos
-        img.save(buffered, format="JPEG", quality=95)
-        optimized_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
-        final_image_url = f"data:image/jpeg;base64,{optimized_base64}"
-
-        # Prompt hiper-específico para que no dude con números parecidos
-        prompt = """Eres un experto analista de Football Manager. Tu tarea es extraer el perfil y los 36 atributos del jugador de esta captura de pantalla.
-Los atributos tienen valores del 1 al 20. ¡CUIDADO! Presta extrema atención a la diferencia visual entre 6 y 16, 9 y 8, y 10 y 18.
-Devuelve ÚNICAMENTE un objeto JSON válido, sin markdown ni comillas triples. No añadas texto explicativo.
-Estructura exacta obligatoria:
+        prompt = """Extrae el perfil y los 36 atributos de esta imagen de Football Manager. 
+Devuelve ÚNICAMENTE un objeto JSON.
+Estructura exacta:
 {"nombre":"","nacionalidad":"","valor":"","edad":"","equipo":"","salario":"","contrato":"","calidad":"","cabeceo":0,"centros":0,"control":0,"entradas":0,"marcaje":0,"pases":0,"regate":0,"remate":0,"tecnica":0,"tiros_lejanos":0,"penaltis":0,"saques_esquina":0,"saques_largos":0,"tiros_libres":0,"agresividad":0,"anticipacion":0,"colocacion":0,"concentracion":0,"decisiones":0,"desmarques":0,"determinacion":0,"juego_equipo":0,"liderazgo":0,"sacrificio":0,"serenidad":0,"talento":0,"valentia":0,"vision":0,"aceleracion":0,"agilidad":0,"salto":0,"equilibrio":0,"fuerza":0,"recuperacion":0,"resistencia":0,"velocidad":0}
-Si no ves un dato o está vacío, pon 0 o ""."""
+Si no ves un dato, pon 0 o ""."""
 
-        chat_completion = client.chat.completions.create(
-            messages=[{"role": "user", "content": [{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": final_image_url}}]}],
-            model="qwen/qwen3.6-27b",
-            temperature=0,
+        response = client.models.generate_content(
+            model='gemini-flash-latest',
+            contents=[img, prompt],
+            # Forzamos JSON nativo para máxima velocidad y evitar fallos
+            config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.0),
         )
 
-        respuesta_texto = chat_completion.choices[0].message.content
-        
+        respuesta_texto = response.text
         match = re.search(r'\{.*\}', respuesta_texto, re.DOTALL)
         json_puro = match.group(0) if match else respuesta_texto
         
-        try:
-            return jsonify({"status": "ok", "data": json.loads(json_puro)})
-        except json.JSONDecodeError:
-            return jsonify({"status": "error", "message": f"Fallo al leer. Respuesta IA: {json_puro[:150]}"})
-            
+        return jsonify({"status": "ok", "data": json.loads(json_puro)})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
 
 @app.route('/')
 def inicio():
-    html = """
+    return render_template_string("""
     <!DOCTYPE html>
     <html lang="es">
     <head>
         <meta charset="UTF-8">
-        <title>FM26 - Tactical Web HUD (Precisión Total)</title>
+        <title>FM26 - Tactical Web HUD</title>
         <script src="https://d3js.org/d3.v7.min.js"></script>
         <style>
             :root { --bg-main: #06090e; --bg-panel: #0d131d; --accent: #00e6a8; --accent-hover: #00ffbc; --text-main: #e1e4e8; --text-muted: #8b949e; --border: #1f293d; }
@@ -80,21 +66,16 @@ def inicio():
             .badge span { color: #fff; font-weight: 600; }
             .badge-accent { border-color: rgba(0, 230, 168, 0.3); color: var(--accent); background: rgba(0, 230, 168, 0.05); }
             .badge-accent span { color: var(--accent); }
-
             .main-layout { display: flex; gap: 20px; flex-grow: 1; min-height: 0; }
             .left-panel { flex: 0 0 45%; display: flex; flex-direction: column; gap: 15px; }
-            
             .btn-scan { background: linear-gradient(135deg, #00c690 0%, #009970 100%); color: #000; border: none; padding: 20px; font-size: 18px; font-weight: 800; border-radius: 10px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px; box-shadow: 0 8px 20px rgba(0, 230, 168, 0.2); transition: all 0.2s ease; display: flex; justify-content: center; align-items: center; gap: 10px;}
             .btn-scan:hover { background: linear-gradient(135deg, var(--accent-hover) 0%, #00b383 100%); transform: translateY(-2px); }
             .btn-scan:disabled { filter: grayscale(0.5); cursor: not-allowed; transform: none; }
-            
             .radar-container { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 10px; flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; padding: 20px;}
             #radarChart { width: 100%; height: 100%; max-height: 600px; display: flex; justify-content: center; align-items: center; overflow: visible; }
             .status-box { position: absolute; bottom: 15px; left: 15px; right: 15px; background: rgba(5,8,13,0.8); border: 1px solid var(--border); padding: 10px 15px; border-radius: 6px; font-family: monospace; font-size: 11px; color: var(--accent); }
-
             .right-panel { flex: 1; display: flex; gap: 15px; overflow-y: auto; padding-right: 5px;}
             .col { flex: 1; display: flex; flex-direction: column; gap: 15px; }
-            
             .category-box { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 10px; padding: 15px; height: fit-content; }
             .category-box h4 { font-size: 1em; color: #fff; margin: 0 0 15px 0; border-bottom: 2px solid var(--border); padding-bottom: 8px; }
             .input-item { display: flex; justify-content: space-between; align-items: center; background: #0b0f17; padding: 6px 10px; border-radius: 6px; margin-bottom: 6px; gap: 10px; }
@@ -118,18 +99,14 @@ def inicio():
                 <div class="badge">Contrato <span id="pContrato">---</span></div>
             </div>
         </div>
-
         <div class="main-layout">
             <div class="left-panel">
-                <button class="btn-scan" onclick="capturarPantalla()" id="btnScan">
-                    ⚡ Enlazar FM26 y Analizar
-                </button>
+                <button class="btn-scan" onclick="capturarPantalla()" id="btnScan">⚡ Enlazar FM26 y Analizar</button>
                 <div class="radar-container">
                     <div id="radarChart"></div>
-                    <div class="status-box" id="debugText">Listo para enlazar el juego. (Máxima Precisión)</div>
+                    <div class="status-box" id="debugText">Listo para enlazar el juego. (Precisión Gemini IA)</div>
                 </div>
             </div>
-
             <div class="right-panel">
                 <div class="col">
                     <div class="category-box">
@@ -157,7 +134,6 @@ def inicio():
                         <div class="input-item"><label>Velocidad</label><input type="range" id="velocidad" min="1" max="20" value="10" oninput="updateVal(this, 'v_velocidad')"><span id="v_velocidad" class="val-display">-</span></div>
                     </div>
                 </div>
-
                 <div class="col">
                     <div class="category-box">
                         <h4>🧠 Mental</h4>
@@ -186,26 +162,17 @@ def inicio():
                 </div>
             </div>
         </div>
-
         <script>
             let videoStream = null;
             const videoElement = document.createElement('video');
             videoElement.autoplay = true;
-
             const inputIds = ['cabeceo', 'centros', 'control', 'entradas', 'marcaje', 'pases', 'regate', 'remate', 'tecnica', 'tiros_lejanos', 'penaltis', 'saques_esquina', 'saques_largos', 'tiros_libres', 'agresividad', 'anticipacion', 'colocacion', 'concentracion', 'decisiones', 'desmarques', 'determinacion', 'juego_equipo', 'liderazgo', 'sacrificio', 'serenidad', 'talento', 'valentia', 'vision', 'aceleracion', 'agilidad', 'salto', 'equilibrio', 'fuerza', 'recuperacion', 'resistencia', 'velocidad'];
             let currentRadarData = {"Defensa":10, "Fisico":10, "Velocidad":10, "Vision":10, "Ataque":10, "Tecnica":10, "Juego Aereo":10, "Mental":10};
-
             const containerWidth = document.querySelector('.radar-container').clientWidth || 500;
             const containerHeight = document.querySelector('.radar-container').clientHeight || 500;
             const size = Math.min(containerWidth, containerHeight) * 0.95;
             const radius = size / 2 - 85; 
-            
-            const svg = d3.select("#radarChart").append("svg")
-                .attr("width", size).attr("height", size)
-                .attr("viewBox", `0 0 ${size} ${size}`)
-                .style("overflow", "visible")
-                .append("g")
-                .attr("transform", `translate(${size/2},${size/2})`);
+            const svg = d3.select("#radarChart").append("svg").attr("width", size).attr("height", size).attr("viewBox", `0 0 ${size} ${size}`).style("overflow", "visible").append("g").attr("transform", `translate(${size/2},${size/2})`);
 
             function drawRadar(datos_json) {
                 svg.selectAll("*").remove();
@@ -214,7 +181,6 @@ def inicio():
                 const data = keys.map(key => ({ axis: key, value: datos_json[key] }));
                 const angleSlice = Math.PI * 2 / data.length;
                 const rScale = d3.scaleLinear().range([0, radius]).domain([0, 20]);
-
                 for (let level = 1; level <= 4; level++) {
                     let r = radius * (level / 4);
                     let points = [];
@@ -230,7 +196,6 @@ def inicio():
                 }
                 const radarLine = d3.lineRadial().curve(d3.curveLinearClosed).radius(d => rScale(d.value)).angle((d, i) => i * angleSlice);
                 svg.append("path").datum(data).attr("d", radarLine).style("fill", "rgba(0, 230, 168, 0.25)").style("stroke", "#00e6a8").style("stroke-width", "3px");
-                
                 data.forEach((d, i) => {
                     const angle = angleSlice * i - Math.PI / 2;
                     svg.append("circle").attr("cx", rScale(d.value) * Math.cos(angle)).attr("cy", rScale(d.value) * Math.sin(angle)).attr("r", 5).style("fill", "#00e6a8");
@@ -266,61 +231,40 @@ def inicio():
             async function capturarPantalla() {
                 const status = document.getElementById('debugText');
                 const btn = document.getElementById('btnScan');
-                
                 try {
                     btn.disabled = true;
                     btn.style.opacity = "0.7";
-
                     if (!videoStream || !videoStream.active) {
                         status.innerText = "Selecciona SOLO la ventana de Football Manager...";
                         videoStream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "never" }, audio: false });
                         videoElement.srcObject = videoStream;
-                        
                         await new Promise(resolve => videoElement.onplaying = resolve);
-                        
-                        videoStream.getVideoTracks()[0].onended = () => {
-                            videoStream = null;
-                            btn.innerHTML = "⚡ Enlazar FM26 y Analizar";
-                        };
-                        
-                        btn.innerHTML = "⚡ Analizar (Máxima Precisión)";
+                        videoStream.getVideoTracks()[0].onended = () => { videoStream = null; btn.innerHTML = "⚡ Enlazar FM26 y Analizar"; };
+                        btn.innerHTML = "⚡ Analizar al Instante";
                     }
-
-                    status.innerText = "Enviando imagen en Alta Calidad a la IA...";
+                    status.innerText = "Enviando fotograma HD a Gemini...";
                     const t0 = performance.now();
-
                     const canvas = document.createElement('canvas');
-                    canvas.width = videoElement.videoWidth;
-                    canvas.height = videoElement.videoHeight;
+                    canvas.width = videoElement.videoWidth; canvas.height = videoElement.videoHeight;
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-                    
-                    // Aseguramos que la imagen que captura el navegador sea de altísima calidad
-                    const base64Image = canvas.toDataURL('image/jpeg', 1.0);
-
                     const res = await fetch('/escanear', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ image: base64Image })
+                        body: JSON.stringify({ image: canvas.toDataURL('image/jpeg', 0.95) })
                     });
-                    
                     const response = await res.json();
                     const t1 = performance.now();
                     const tiempo = ((t1 - t0) / 1000).toFixed(1);
-
-                    btn.disabled = false;
-                    btn.style.opacity = "1";
-
+                    btn.disabled = false; btn.style.opacity = "1";
                     if(response.status === "ok") {
-                        status.innerText = `✅ ¡Análisis exacto completado en ${tiempo}s!`;
+                        status.innerText = `✅ ¡Precisión total en ${tiempo}s!`;
                         actualizarUI(response.data);
                     } else {
                         status.innerText = "❌ " + response.message;
                     }
                 } catch (err) {
-                    btn.disabled = false;
-                    btn.style.opacity = "1";
-                    videoStream = null;
+                    btn.disabled = false; btn.style.opacity = "1"; videoStream = null;
                     btn.innerHTML = "⚡ Enlazar FM26 y Analizar";
                     status.innerText = "⚠️ Error de captura. Vuelve a intentarlo.";
                 }
@@ -335,7 +279,6 @@ def inicio():
                 document.getElementById('pVal').innerText = data.valor || "---";
                 document.getElementById('pSalario').innerText = data.salario || "---";
                 document.getElementById('pContrato').innerText = data.contrato || "---";
-                
                 inputIds.forEach(id => {
                     let val = data[id];
                     if (val !== undefined && val !== "" && val !== null) {
@@ -345,7 +288,6 @@ def inicio():
                         document.getElementById('v_' + id).innerText = "-";
                     }
                 });
-                
                 recalcularRadarLocal();
             }
 
@@ -359,7 +301,7 @@ def inicio():
     </body>
     </html>
     """
-    return render_template_string(html)
+    )
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=False)
