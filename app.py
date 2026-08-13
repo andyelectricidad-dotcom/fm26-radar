@@ -21,18 +21,21 @@ def escanear():
         data = request.json
         image_data = data.get("image", "")
         
-        # Optimización Extrema: Blanco y negro, 1024px y compresión 50%
+        # PROCESADO EQUILIBRADO: Recuperamos el color (RGB) para que la IA lea mejor los colores de los atributos
         header, encoded = image_data.split(",", 1)
         image_bytes = base64.b64decode(encoded)
-        img = Image.open(io.BytesIO(image_bytes)).convert('L')
-        img.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+        img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
+        
+        # Resolución media-alta para mantener precisión sin perder velocidad
+        img.thumbnail((1280, 1280), Image.Resampling.LANCZOS)
         
         buffered = io.BytesIO()
-        img.save(buffered, format="JPEG", quality=50)
+        img.save(buffered, format="JPEG", quality=75)
         optimized_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
         final_image_url = f"data:image/jpeg;base64,{optimized_base64}"
 
         prompt = """Extrae perfil y los 36 atributos de esta imagen de FM26. 
+        Lee con cuidado para no confundir números similares (ej. 6 y 16, 8 y 9).
         Devuelve SOLO JSON MINIFICADO. Estructura exacta:
         {"nombre":"","nacionalidad":"","valor":"","edad":"","equipo":"","salario":"","contrato":"","calidad":"","cabeceo":0,"centros":0,"control":0,"entradas":0,"marcaje":0,"pases":0,"regate":0,"remate":0,"tecnica":0,"tiros_lejanos":0,"penaltis":0,"saques_esquina":0,"saques_largos":0,"tiros_libres":0,"agresividad":0,"anticipacion":0,"colocacion":0,"concentracion":0,"decisiones":0,"desmarques":0,"determinacion":0,"juego_equipo":0,"liderazgo":0,"sacrificio":0,"serenidad":0,"talento":0,"valentia":0,"vision":0,"aceleracion":0,"agilidad":0,"salto":0,"equilibrio":0,"fuerza":0,"recuperacion":0,"resistencia":0,"velocidad":0}
         Si un dato no está, pon 0 o ""."""
@@ -47,7 +50,6 @@ def escanear():
                     ],
                 }
             ],
-            # ¡AQUÍ ESTÁ EL CAMBIO AL NUEVO MODELO DE GROQ!
             model="qwen/qwen3.6-27b",
             response_format={"type": "json_object"},
             temperature=0,
@@ -69,7 +71,7 @@ def inicio():
     <html lang="es">
     <head>
         <meta charset="UTF-8">
-        <title>FM26 - Tactical Web HUD (Turbo)</title>
+        <title>FM26 - Tactical Web HUD</title>
         <script src="https://d3js.org/d3.v7.min.js"></script>
         <style>
             :root { --bg-main: #06090e; --bg-panel: #0d131d; --accent: #00e6a8; --accent-hover: #00ffbc; --text-main: #e1e4e8; --text-muted: #8b949e; --border: #1f293d; }
@@ -93,7 +95,10 @@ def inicio():
             #radarChart { width: 100%; height: 100%; max-height: 600px; display: flex; justify-content: center; align-items: center; overflow: visible; }
             .status-box { position: absolute; bottom: 15px; left: 15px; right: 15px; background: rgba(5,8,13,0.8); border: 1px solid var(--border); padding: 10px 15px; border-radius: 6px; font-family: monospace; font-size: 11px; color: var(--accent); }
 
-            .right-panel { flex: 1; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; overflow-y: auto; padding-right: 5px;}
+            /* INTERFAZ EN 2 COLUMNAS PERFECTAMENTE BALANCEADAS */
+            .right-panel { flex: 1; display: flex; gap: 15px; overflow-y: auto; padding-right: 5px;}
+            .col { flex: 1; display: flex; flex-direction: column; gap: 15px; }
+            
             .category-box { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 10px; padding: 15px; height: fit-content; }
             .category-box h4 { font-size: 1em; color: #fff; margin: 0 0 15px 0; border-bottom: 2px solid var(--border); padding-bottom: 8px; }
             .input-item { display: flex; justify-content: space-between; align-items: center; background: #0b0f17; padding: 6px 10px; border-radius: 6px; margin-bottom: 6px; gap: 10px; }
@@ -125,58 +130,65 @@ def inicio():
                 </button>
                 <div class="radar-container">
                     <div id="radarChart"></div>
-                    <div class="status-box" id="debugText">Listo para enlazar el juego. (Modo Turbo)</div>
+                    <div class="status-box" id="debugText">Listo para enlazar el juego. (Precisión + Velocidad)</div>
                 </div>
             </div>
 
             <div class="right-panel">
-                <div class="category-box">
-                    <h4>⚽ Técnico</h4>
-                    <div class="input-item"><label>Cabeceo</label><input type="range" id="cabeceo" min="1" max="20" value="10" oninput="updateVal(this, 'v_cabeceo')"><span id="v_cabeceo" class="val-display">-</span></div>
-                    <div class="input-item"><label>Centros</label><input type="range" id="centros" min="1" max="20" value="10" oninput="updateVal(this, 'v_centros')"><span id="v_centros" class="val-display">-</span></div>
-                    <div class="input-item"><label>Control</label><input type="range" id="control" min="1" max="20" value="10" oninput="updateVal(this, 'v_control')"><span id="v_control" class="val-display">-</span></div>
-                    <div class="input-item"><label>Entradas</label><input type="range" id="entradas" min="1" max="20" value="10" oninput="updateVal(this, 'v_entradas')"><span id="v_entradas" class="val-display">-</span></div>
-                    <div class="input-item"><label>Marcaje</label><input type="range" id="marcaje" min="1" max="20" value="10" oninput="updateVal(this, 'v_marcaje')"><span id="v_marcaje" class="val-display">-</span></div>
-                    <div class="input-item"><label>Pases</label><input type="range" id="pases" min="1" max="20" value="10" oninput="updateVal(this, 'v_pases')"><span id="v_pases" class="val-display">-</span></div>
-                    <div class="input-item"><label>Regate</label><input type="range" id="regate" min="1" max="20" value="10" oninput="updateVal(this, 'v_regate')"><span id="v_regate" class="val-display">-</span></div>
-                    <div class="input-item"><label>Remate</label><input type="range" id="remate" min="1" max="20" value="10" oninput="updateVal(this, 'v_remate')"><span id="v_remate" class="val-display">-</span></div>
-                    <div class="input-item"><label>Técnica</label><input type="range" id="tecnica" min="1" max="20" value="10" oninput="updateVal(this, 'v_tecnica')"><span id="v_tecnica" class="val-display">-</span></div>
-                    <div class="input-item"><label>T. lejanos</label><input type="range" id="tiros_lejanos" min="1" max="20" value="10" oninput="updateVal(this, 'v_tiros_lejanos')"><span id="v_tiros_lejanos" class="val-display">-</span></div>
+                <!-- Columna Izquierda: Técnico (10) + Físico (8) = 18 items -->
+                <div class="col">
+                    <div class="category-box">
+                        <h4>⚽ Técnico</h4>
+                        <div class="input-item"><label>Cabeceo</label><input type="range" id="cabeceo" min="1" max="20" value="10" oninput="updateVal(this, 'v_cabeceo')"><span id="v_cabeceo" class="val-display">-</span></div>
+                        <div class="input-item"><label>Centros</label><input type="range" id="centros" min="1" max="20" value="10" oninput="updateVal(this, 'v_centros')"><span id="v_centros" class="val-display">-</span></div>
+                        <div class="input-item"><label>Control</label><input type="range" id="control" min="1" max="20" value="10" oninput="updateVal(this, 'v_control')"><span id="v_control" class="val-display">-</span></div>
+                        <div class="input-item"><label>Entradas</label><input type="range" id="entradas" min="1" max="20" value="10" oninput="updateVal(this, 'v_entradas')"><span id="v_entradas" class="val-display">-</span></div>
+                        <div class="input-item"><label>Marcaje</label><input type="range" id="marcaje" min="1" max="20" value="10" oninput="updateVal(this, 'v_marcaje')"><span id="v_marcaje" class="val-display">-</span></div>
+                        <div class="input-item"><label>Pases</label><input type="range" id="pases" min="1" max="20" value="10" oninput="updateVal(this, 'v_pases')"><span id="v_pases" class="val-display">-</span></div>
+                        <div class="input-item"><label>Regate</label><input type="range" id="regate" min="1" max="20" value="10" oninput="updateVal(this, 'v_regate')"><span id="v_regate" class="val-display">-</span></div>
+                        <div class="input-item"><label>Remate</label><input type="range" id="remate" min="1" max="20" value="10" oninput="updateVal(this, 'v_remate')"><span id="v_remate" class="val-display">-</span></div>
+                        <div class="input-item"><label>Técnica</label><input type="range" id="tecnica" min="1" max="20" value="10" oninput="updateVal(this, 'v_tecnica')"><span id="v_tecnica" class="val-display">-</span></div>
+                        <div class="input-item"><label>T. lejanos</label><input type="range" id="tiros_lejanos" min="1" max="20" value="10" oninput="updateVal(this, 'v_tiros_lejanos')"><span id="v_tiros_lejanos" class="val-display">-</span></div>
+                    </div>
+                    <div class="category-box">
+                        <h4>⚡ Físico</h4>
+                        <div class="input-item"><label>Aceleración</label><input type="range" id="aceleracion" min="1" max="20" value="10" oninput="updateVal(this, 'v_aceleracion')"><span id="v_aceleracion" class="val-display">-</span></div>
+                        <div class="input-item"><label>Agilidad</label><input type="range" id="agilidad" min="1" max="20" value="10" oninput="updateVal(this, 'v_agilidad')"><span id="v_agilidad" class="val-display">-</span></div>
+                        <div class="input-item"><label>Salto</label><input type="range" id="salto" min="1" max="20" value="10" oninput="updateVal(this, 'v_salto')"><span id="v_salto" class="val-display">-</span></div>
+                        <div class="input-item"><label>Equilibrio</label><input type="range" id="equilibrio" min="1" max="20" value="10" oninput="updateVal(this, 'v_equilibrio')"><span id="v_equilibrio" class="val-display">-</span></div>
+                        <div class="input-item"><label>Fuerza</label><input type="range" id="fuerza" min="1" max="20" value="10" oninput="updateVal(this, 'v_fuerza')"><span id="v_fuerza" class="val-display">-</span></div>
+                        <div class="input-item"><label>Recup. física</label><input type="range" id="recuperacion" min="1" max="20" value="10" oninput="updateVal(this, 'v_recuperacion')"><span id="v_recuperacion" class="val-display">-</span></div>
+                        <div class="input-item"><label>Resistencia</label><input type="range" id="resistencia" min="1" max="20" value="10" oninput="updateVal(this, 'v_resistencia')"><span id="v_resistencia" class="val-display">-</span></div>
+                        <div class="input-item"><label>Velocidad</label><input type="range" id="velocidad" min="1" max="20" value="10" oninput="updateVal(this, 'v_velocidad')"><span id="v_velocidad" class="val-display">-</span></div>
+                    </div>
                 </div>
-                <div class="category-box">
-                    <h4>🎯 Balón Parado</h4>
-                    <div class="input-item"><label>Penaltis</label><input type="range" id="penaltis" min="1" max="20" value="10" oninput="updateVal(this, 'v_penaltis')"><span id="v_penaltis" class="val-display">-</span></div>
-                    <div class="input-item"><label>S. esquina</label><input type="range" id="saques_esquina" min="1" max="20" value="10" oninput="updateVal(this, 'v_saques_esquina')"><span id="v_saques_esquina" class="val-display">-</span></div>
-                    <div class="input-item"><label>S. largos</label><input type="range" id="saques_largos" min="1" max="20" value="10" oninput="updateVal(this, 'v_saques_largos')"><span id="v_saques_largos" class="val-display">-</span></div>
-                    <div class="input-item"><label>T. libres</label><input type="range" id="tiros_libres" min="1" max="20" value="10" oninput="updateVal(this, 'v_tiros_libres')"><span id="v_tiros_libres" class="val-display">-</span></div>
-                </div>
-                <div class="category-box">
-                    <h4>🧠 Mental</h4>
-                    <div class="input-item"><label>Agresividad</label><input type="range" id="agresividad" min="1" max="20" value="10" oninput="updateVal(this, 'v_agresividad')"><span id="v_agresividad" class="val-display">-</span></div>
-                    <div class="input-item"><label>Anticipación</label><input type="range" id="anticipacion" min="1" max="20" value="10" oninput="updateVal(this, 'v_anticipacion')"><span id="v_anticipacion" class="val-display">-</span></div>
-                    <div class="input-item"><label>Colocación</label><input type="range" id="colocacion" min="1" max="20" value="10" oninput="updateVal(this, 'v_colocacion')"><span id="v_colocacion" class="val-display">-</span></div>
-                    <div class="input-item"><label>Concentración</label><input type="range" id="concentracion" min="1" max="20" value="10" oninput="updateVal(this, 'v_concentracion')"><span id="v_concentracion" class="val-display">-</span></div>
-                    <div class="input-item"><label>Decisiones</label><input type="range" id="decisiones" min="1" max="20" value="10" oninput="updateVal(this, 'v_decisiones')"><span id="v_decisiones" class="val-display">-</span></div>
-                    <div class="input-item"><label>Desmarques</label><input type="range" id="desmarques" min="1" max="20" value="10" oninput="updateVal(this, 'v_desmarques')"><span id="v_desmarques" class="val-display">-</span></div>
-                    <div class="input-item"><label>Determinación</label><input type="range" id="determinacion" min="1" max="20" value="10" oninput="updateVal(this, 'v_determinacion')"><span id="v_determinacion" class="val-display">-</span></div>
-                    <div class="input-item"><label>Juego equipo</label><input type="range" id="juego_equipo" min="1" max="20" value="10" oninput="updateVal(this, 'v_juego_equipo')"><span id="v_juego_equipo" class="val-display">-</span></div>
-                    <div class="input-item"><label>Liderazgo</label><input type="range" id="liderazgo" min="1" max="20" value="10" oninput="updateVal(this, 'v_liderazgo')"><span id="v_liderazgo" class="val-display">-</span></div>
-                    <div class="input-item"><label>Sacrificio</label><input type="range" id="sacrificio" min="1" max="20" value="10" oninput="updateVal(this, 'v_sacrificio')"><span id="v_sacrificio" class="val-display">-</span></div>
-                    <div class="input-item"><label>Serenidad</label><input type="range" id="serenidad" min="1" max="20" value="10" oninput="updateVal(this, 'v_serenidad')"><span id="v_serenidad" class="val-display">-</span></div>
-                    <div class="input-item"><label>Talento</label><input type="range" id="talento" min="1" max="20" value="10" oninput="updateVal(this, 'v_talento')"><span id="v_talento" class="val-display">-</span></div>
-                    <div class="input-item"><label>Valentía</label><input type="range" id="valentia" min="1" max="20" value="10" oninput="updateVal(this, 'v_valentia')"><span id="v_valentia" class="val-display">-</span></div>
-                    <div class="input-item"><label>Visión</label><input type="range" id="vision" min="1" max="20" value="10" oninput="updateVal(this, 'v_vision')"><span id="v_vision" class="val-display">-</span></div>
-                </div>
-                <div class="category-box">
-                    <h4>⚡ Físico</h4>
-                    <div class="input-item"><label>Aceleración</label><input type="range" id="aceleracion" min="1" max="20" value="10" oninput="updateVal(this, 'v_aceleracion')"><span id="v_aceleracion" class="val-display">-</span></div>
-                    <div class="input-item"><label>Agilidad</label><input type="range" id="agilidad" min="1" max="20" value="10" oninput="updateVal(this, 'v_agilidad')"><span id="v_agilidad" class="val-display">-</span></div>
-                    <div class="input-item"><label>Salto</label><input type="range" id="salto" min="1" max="20" value="10" oninput="updateVal(this, 'v_salto')"><span id="v_salto" class="val-display">-</span></div>
-                    <div class="input-item"><label>Equilibrio</label><input type="range" id="equilibrio" min="1" max="20" value="10" oninput="updateVal(this, 'v_equilibrio')"><span id="v_equilibrio" class="val-display">-</span></div>
-                    <div class="input-item"><label>Fuerza</label><input type="range" id="fuerza" min="1" max="20" value="10" oninput="updateVal(this, 'v_fuerza')"><span id="v_fuerza" class="val-display">-</span></div>
-                    <div class="input-item"><label>Recup. física</label><input type="range" id="recuperacion" min="1" max="20" value="10" oninput="updateVal(this, 'v_recuperacion')"><span id="v_recuperacion" class="val-display">-</span></div>
-                    <div class="input-item"><label>Resistencia</label><input type="range" id="resistencia" min="1" max="20" value="10" oninput="updateVal(this, 'v_resistencia')"><span id="v_resistencia" class="val-display">-</span></div>
-                    <div class="input-item"><label>Velocidad</label><input type="range" id="velocidad" min="1" max="20" value="10" oninput="updateVal(this, 'v_velocidad')"><span id="v_velocidad" class="val-display">-</span></div>
+
+                <!-- Columna Derecha: Mental (14) + Balón Parado (4) = 18 items -->
+                <div class="col">
+                    <div class="category-box">
+                        <h4>🧠 Mental</h4>
+                        <div class="input-item"><label>Agresividad</label><input type="range" id="agresividad" min="1" max="20" value="10" oninput="updateVal(this, 'v_agresividad')"><span id="v_agresividad" class="val-display">-</span></div>
+                        <div class="input-item"><label>Anticipación</label><input type="range" id="anticipacion" min="1" max="20" value="10" oninput="updateVal(this, 'v_anticipacion')"><span id="v_anticipacion" class="val-display">-</span></div>
+                        <div class="input-item"><label>Colocación</label><input type="range" id="colocacion" min="1" max="20" value="10" oninput="updateVal(this, 'v_colocacion')"><span id="v_colocacion" class="val-display">-</span></div>
+                        <div class="input-item"><label>Concentración</label><input type="range" id="concentracion" min="1" max="20" value="10" oninput="updateVal(this, 'v_concentracion')"><span id="v_concentracion" class="val-display">-</span></div>
+                        <div class="input-item"><label>Decisiones</label><input type="range" id="decisiones" min="1" max="20" value="10" oninput="updateVal(this, 'v_decisiones')"><span id="v_decisiones" class="val-display">-</span></div>
+                        <div class="input-item"><label>Desmarques</label><input type="range" id="desmarques" min="1" max="20" value="10" oninput="updateVal(this, 'v_desmarques')"><span id="v_desmarques" class="val-display">-</span></div>
+                        <div class="input-item"><label>Determinación</label><input type="range" id="determinacion" min="1" max="20" value="10" oninput="updateVal(this, 'v_determinacion')"><span id="v_determinacion" class="val-display">-</span></div>
+                        <div class="input-item"><label>Juego equipo</label><input type="range" id="juego_equipo" min="1" max="20" value="10" oninput="updateVal(this, 'v_juego_equipo')"><span id="v_juego_equipo" class="val-display">-</span></div>
+                        <div class="input-item"><label>Liderazgo</label><input type="range" id="liderazgo" min="1" max="20" value="10" oninput="updateVal(this, 'v_liderazgo')"><span id="v_liderazgo" class="val-display">-</span></div>
+                        <div class="input-item"><label>Sacrificio</label><input type="range" id="sacrificio" min="1" max="20" value="10" oninput="updateVal(this, 'v_sacrificio')"><span id="v_sacrificio" class="val-display">-</span></div>
+                        <div class="input-item"><label>Serenidad</label><input type="range" id="serenidad" min="1" max="20" value="10" oninput="updateVal(this, 'v_serenidad')"><span id="v_serenidad" class="val-display">-</span></div>
+                        <div class="input-item"><label>Talento</label><input type="range" id="talento" min="1" max="20" value="10" oninput="updateVal(this, 'v_talento')"><span id="v_talento" class="val-display">-</span></div>
+                        <div class="input-item"><label>Valentía</label><input type="range" id="valentia" min="1" max="20" value="10" oninput="updateVal(this, 'v_valentia')"><span id="v_valentia" class="val-display">-</span></div>
+                        <div class="input-item"><label>Visión</label><input type="range" id="vision" min="1" max="20" value="10" oninput="updateVal(this, 'v_vision')"><span id="v_vision" class="val-display">-</span></div>
+                    </div>
+                    <div class="category-box">
+                        <h4>🎯 Balón Parado</h4>
+                        <div class="input-item"><label>Penaltis</label><input type="range" id="penaltis" min="1" max="20" value="10" oninput="updateVal(this, 'v_penaltis')"><span id="v_penaltis" class="val-display">-</span></div>
+                        <div class="input-item"><label>S. esquina</label><input type="range" id="saques_esquina" min="1" max="20" value="10" oninput="updateVal(this, 'v_saques_esquina')"><span id="v_saques_esquina" class="val-display">-</span></div>
+                        <div class="input-item"><label>S. largos</label><input type="range" id="saques_largos" min="1" max="20" value="10" oninput="updateVal(this, 'v_saques_largos')"><span id="v_saques_largos" class="val-display">-</span></div>
+                        <div class="input-item"><label>T. libres</label><input type="range" id="tiros_libres" min="1" max="20" value="10" oninput="updateVal(this, 'v_tiros_libres')"><span id="v_tiros_libres" class="val-display">-</span></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -277,10 +289,10 @@ def inicio():
                             btn.innerHTML = "⚡ Enlazar FM26 y Analizar";
                         };
                         
-                        btn.innerHTML = "⚡ Analizar (Modo Turbo)";
+                        btn.innerHTML = "⚡ Analizar (Alta Precisión)";
                     }
 
-                    status.innerText = "Procesando de forma estabilizada...";
+                    status.innerText = "Extrayendo atributos...";
                     const t0 = performance.now();
 
                     const canvas = document.createElement('canvas');
@@ -304,7 +316,7 @@ def inicio():
                     btn.style.opacity = "1";
 
                     if(response.status === "ok") {
-                        status.innerText = `✅ ¡Completado en ${tiempo} segundos!`;
+                        status.innerText = `✅ ¡Análisis completado en ${tiempo}s!`;
                         actualizarUI(response.data);
                     } else {
                         status.innerText = "❌ Error: " + response.message;
@@ -314,7 +326,7 @@ def inicio():
                     btn.style.opacity = "1";
                     videoStream = null;
                     btn.innerHTML = "⚡ Enlazar FM26 y Analizar";
-                    status.innerText = "⚠️ Error. Vuelve a intentarlo.";
+                    status.innerText = "⚠️ Error de captura. Vuelve a intentarlo.";
                 }
             }
 
