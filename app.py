@@ -9,6 +9,7 @@ from groq import Groq
 
 app = Flask(__name__)
 
+# La API Key se lee de forma segura del servidor de Render
 API_KEY = os.environ.get("GROQ_API_KEY", "")
 
 client = None
@@ -24,31 +25,27 @@ def escanear():
         data = request.json
         image_data = data.get("image", "")
         
-        # 1. OPTIMIZACIÓN EXTREMA DE IMAGEN
+        # 1. OPTIMIZACIÓN EXTREMA: Separar la imagen
         header, encoded = image_data.split(",", 1)
         image_bytes = base64.b64decode(encoded)
-        img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
         
-        # Reducimos a 720p (Sobra para leer texto y es el doble de rápido)
-        img.thumbnail((1280, 720), Image.Resampling.LANCZOS)
+        # 2. MAGIA: Convertir a Blanco y Negro ('L' = Luminance) para aligerar la carga visual de la IA
+        img = Image.open(io.BytesIO(image_bytes)).convert('L')
         
-        # Compresión agresiva (60% JPEG) para que viaje rapidísimo por la red
+        # 3. Bajar la resolución a 1024px (sigue siendo 100% legible)
+        img.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+        
+        # 4. Compresión extra agresiva (50%) para que viaje rapidísimo
         buffered = io.BytesIO()
-        img.save(buffered, format="JPEG", quality=60)
+        img.save(buffered, format="JPEG", quality=50)
         optimized_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
         final_image_url = f"data:image/jpeg;base64,{optimized_base64}"
 
-        prompt = """
-        Analiza esta imagen de Football Manager. Extrae perfil y atributos numéricos (1-20).
-        Devuelve SOLO JSON puro. Sin texto extra. Si no se ve, pon "".
-        {
-          "nombre": "", "nacionalidad": "", "valor": "", "edad": "", "equipo": "", "salario": "", "contrato": "", "calidad": "",
-          "cabeceo": 0, "centros": 0, "control": 0, "entradas": 0, "marcaje": 0, "pases": 0, "regate": 0, "remate": 0, "tecnica": 0, "tiros_lejanos": 0,
-          "penaltis": 0, "saques_esquina": 0, "saques_largos": 0, "tiros_libres": 0,
-          "agresividad": 0, "anticipacion": 0, "colocacion": 0, "concentracion": 0, "decisiones": 0, "desmarques": 0, "determinacion": 0, "juego_equipo": 0, "liderazgo": 0, "sacrificio": 0, "serenidad": 0, "talento": 0, "valentia": 0, "vision": 0,
-          "aceleracion": 0, "agilidad": 0, "salto": 0, "equilibrio": 0, "fuerza": 0, "recuperacion": 0, "resistencia": 0, "velocidad": 0
-        }
-        """
+        # 5. PROMPT MINIFICADO: Le pedimos que no pierda tiempo poniendo espacios ni saltos de línea
+        prompt = """Extrae perfil y los 36 atributos de esta imagen de FM26. 
+        Devuelve SOLO JSON MINIFICADO (todo en una linea, sin espacios). Estructura exacta:
+        {"nombre":"","nacionalidad":"","valor":"","edad":"","equipo":"","salario":"","contrato":"","calidad":"","cabeceo":0,"centros":0,"control":0,"entradas":0,"marcaje":0,"pases":0,"regate":0,"remate":0,"tecnica":0,"tiros_lejanos":0,"penaltis":0,"saques_esquina":0,"saques_largos":0,"tiros_libres":0,"agresividad":0,"anticipacion":0,"colocacion":0,"concentracion":0,"decisiones":0,"desmarques":0,"determinacion":0,"juego_equipo":0,"liderazgo":0,"sacrificio":0,"serenidad":0,"talento":0,"valentia":0,"vision":0,"aceleracion":0,"agilidad":0,"salto":0,"equilibrio":0,"fuerza":0,"recuperacion":0,"resistencia":0,"velocidad":0}
+        Si un dato no está, pon "" o 0."""
 
         chat_completion = client.chat.completions.create(
             messages=[
@@ -60,7 +57,6 @@ def escanear():
                     ],
                 }
             ],
-            # 2. EL CAMBIO MÁS IMPORTANTE: Usar el modelo de 11B (Un cohete) en vez del 90B
             model="llama-3.2-11b-vision-preview",
             temperature=0,
         )
@@ -82,7 +78,7 @@ def inicio():
     <html lang="es">
     <head>
         <meta charset="UTF-8">
-        <title>FM26 - Tactical Web HUD (Fast Mode)</title>
+        <title>FM26 - Tactical Web HUD (Hyper Fast)</title>
         <script src="https://d3js.org/d3.v7.min.js"></script>
         <style>
             :root { --bg-main: #06090e; --bg-panel: #0d131d; --accent: #00e6a8; --accent-hover: #00ffbc; --text-main: #e1e4e8; --text-muted: #8b949e; --border: #1f293d; }
@@ -138,7 +134,7 @@ def inicio():
                 </button>
                 <div class="radar-container">
                     <div id="radarChart"></div>
-                    <div class="status-box" id="debugText">Listo para enlazar el juego. (Modo Ultrarrápido)</div>
+                    <div class="status-box" id="debugText">Listo para enlazar el juego. (Modo Hyper-Fast)</div>
                 </div>
             </div>
 
