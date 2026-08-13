@@ -16,7 +16,7 @@ client = genai.Client(api_key=API_KEY) if API_KEY else None
 @app.route('/escanear', methods=['POST'])
 def escanear():
     if not client:
-        return jsonify({"status": "error", "message": "API Key de Gemini no configurada en Render."})
+        return jsonify({"status": "error", "message": "API Key de Gemini no configurada."})
     
     try:
         data = request.json
@@ -26,16 +26,23 @@ def escanear():
         image_bytes = base64.b64decode(encoded)
         img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
         
-        prompt = """Extrae el perfil y los 36 atributos de esta imagen de Football Manager. 
-Devuelve ÚNICAMENTE un objeto JSON.
-Estructura exacta:
-{"nombre":"","nacionalidad":"","valor":"","edad":"","equipo":"","salario":"","contrato":"","calidad":"","cabeceo":0,"centros":0,"control":0,"entradas":0,"marcaje":0,"pases":0,"regate":0,"remate":0,"tecnica":0,"tiros_lejanos":0,"penaltis":0,"saques_esquina":0,"saques_largos":0,"tiros_libres":0,"agresividad":0,"anticipacion":0,"colocacion":0,"concentracion":0,"decisiones":0,"desmarques":0,"determinacion":0,"juego_equipo":0,"liderazgo":0,"sacrificio":0,"serenidad":0,"talento":0,"valentia":0,"vision":0,"aceleracion":0,"agilidad":0,"salto":0,"equilibrio":0,"fuerza":0,"recuperacion":0,"resistencia":0,"velocidad":0}
-Si no ves un dato, pon 0 o ""."""
+        # ⚡ EL TRUCO DE VELOCIDAD: Reducimos la imagen drásticamente.
+        # Gemini es tan listo que no necesita 1080p para leer. A 720p vuela.
+        img.thumbnail((1280, 720), Image.Resampling.LANCZOS)
+        
+        buffered = io.BytesIO()
+        # Bajamos la compresión de 95 a 80. La imagen pesará apenas 80KB.
+        img.save(buffered, format="JPEG", quality=80)
+        optimized_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+        final_image_url = f"data:image/jpeg;base64,{optimized_base64}"
+
+        # ⚡ PROMPT MINIFICADO: Cuanto menos texto lea la IA, más rápido responde.
+        prompt = """Extrae perfil y 36 atributos de FM. Devuelve SOLO JSON.
+{"nombre":"","nacionalidad":"","valor":"","edad":"","equipo":"","salario":"","contrato":"","calidad":"","cabeceo":0,"centros":0,"control":0,"entradas":0,"marcaje":0,"pases":0,"regate":0,"remate":0,"tecnica":0,"tiros_lejanos":0,"penaltis":0,"saques_esquina":0,"saques_largos":0,"tiros_libres":0,"agresividad":0,"anticipacion":0,"colocacion":0,"concentracion":0,"decisiones":0,"desmarques":0,"determinacion":0,"juego_equipo":0,"liderazgo":0,"sacrificio":0,"serenidad":0,"talento":0,"valentia":0,"vision":0,"aceleracion":0,"agilidad":0,"salto":0,"equilibrio":0,"fuerza":0,"recuperacion":0,"resistencia":0,"velocidad":0}"""
 
         response = client.models.generate_content(
             model='gemini-flash-latest',
             contents=[img, prompt],
-            # Forzamos JSON nativo para máxima velocidad y evitar fallos
             config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.0),
         )
 
@@ -54,7 +61,7 @@ def inicio():
     <html lang="es">
     <head>
         <meta charset="UTF-8">
-        <title>FM26 - Tactical Web HUD</title>
+        <title>FM26 - Tactical Web HUD (Optimizado)</title>
         <script src="https://d3js.org/d3.v7.min.js"></script>
         <style>
             :root { --bg-main: #06090e; --bg-panel: #0d131d; --accent: #00e6a8; --accent-hover: #00ffbc; --text-main: #e1e4e8; --text-muted: #8b949e; --border: #1f293d; }
@@ -105,7 +112,7 @@ def inicio():
                 <div class="radar-container">
                     <div id="radarChart"></div>
                     <div class="status-box">
-                        <span id="debugText">Listo para enlazar el juego. (Precisión Gemini IA)</span>
+                        <span id="debugText">Listo para enlazar el juego.</span>
                         <span id="statsText" style="color: var(--text-muted);"></span>
                     </div>
                 </div>
@@ -249,9 +256,9 @@ def inicio():
                         videoElement.srcObject = videoStream;
                         await new Promise(resolve => videoElement.onplaying = resolve);
                         videoStream.getVideoTracks()[0].onended = () => { videoStream = null; btn.innerHTML = "⚡ Enlazar FM26 y Analizar"; };
-                        btn.innerHTML = "⚡ Analizar al Instante";
+                        btn.innerHTML = "⚡ Analizar (Optimizado)";
                     }
-                    status.innerText = "Enviando fotograma a la IA...";
+                    status.innerText = "Analizando fotograma a la velocidad del rayo...";
                     const t0 = performance.now();
                     const canvas = document.createElement('canvas');
                     canvas.width = videoElement.videoWidth; canvas.height = videoElement.videoHeight;
