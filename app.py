@@ -34,11 +34,11 @@ def escanear():
         optimized_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
         final_image_url = f"data:image/jpeg;base64,{optimized_base64}"
 
-        prompt = """Extrae perfil y los 36 atributos de esta imagen de FM26. 
-        Lee con cuidado para no confundir números similares (ej. 6 y 16, 8 y 9).
-        Devuelve SOLO código JSON válido. Sin texto extra. Estructura exacta:
-        {"nombre":"","nacionalidad":"","valor":"","edad":"","equipo":"","salario":"","contrato":"","calidad":"","cabeceo":0,"centros":0,"control":0,"entradas":0,"marcaje":0,"pases":0,"regate":0,"remate":0,"tecnica":0,"tiros_lejanos":0,"penaltis":0,"saques_esquina":0,"saques_largos":0,"tiros_libres":0,"agresividad":0,"anticipacion":0,"colocacion":0,"concentracion":0,"decisiones":0,"desmarques":0,"determinacion":0,"juego_equipo":0,"liderazgo":0,"sacrificio":0,"serenidad":0,"talento":0,"valentia":0,"vision":0,"aceleracion":0,"agilidad":0,"salto":0,"equilibrio":0,"fuerza":0,"recuperacion":0,"resistencia":0,"velocidad":0}
-        Si un dato no está, pon 0 o ""."""
+        prompt = """Extrae el perfil y los 36 atributos de esta imagen de Football Manager. 
+IMPORTANTE: Devuelve ÚNICAMENTE un objeto JSON válido. No escribas ninguna palabra antes ni después del JSON. No uses markdown. 
+Estructura exacta:
+{"nombre":"","nacionalidad":"","valor":"","edad":"","equipo":"","salario":"","contrato":"","calidad":"","cabeceo":0,"centros":0,"control":0,"entradas":0,"marcaje":0,"pases":0,"regate":0,"remate":0,"tecnica":0,"tiros_lejanos":0,"penaltis":0,"saques_esquina":0,"saques_largos":0,"tiros_libres":0,"agresividad":0,"anticipacion":0,"colocacion":0,"concentracion":0,"decisiones":0,"desmarques":0,"determinacion":0,"juego_equipo":0,"liderazgo":0,"sacrificio":0,"serenidad":0,"talento":0,"valentia":0,"vision":0,"aceleracion":0,"agilidad":0,"salto":0,"equilibrio":0,"fuerza":0,"recuperacion":0,"resistencia":0,"velocidad":0}
+Si no ves un dato, pon 0 o ""."""
 
         chat_completion = client.chat.completions.create(
             messages=[
@@ -50,8 +50,8 @@ def escanear():
                     ],
                 }
             ],
-            # Usamos el modelo de 90B: Mucho más inteligente y exacto formateando datos
-            model="llama-3.2-90b-vision-preview",
+            # Usamos el modelo oficial actual para visión en Groq
+            model="qwen/qwen3.6-27b",
             temperature=0,
         )
 
@@ -67,7 +67,7 @@ def escanear():
             return jsonify({"status": "ok", "data": datos})
         except json.JSONDecodeError:
             # Si la IA se salta las reglas y rompe el JSON, te mostramos exactamente qué dijo para investigar
-            return jsonify({"status": "error", "message": f"Fallo de la IA al escribir el JSON. Respuesta cruda: {json_puro}"})
+            return jsonify({"status": "error", "message": f"Fallo de la IA al escribir el JSON. Respuesta: {json_puro[:150]}..."})
             
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
@@ -138,7 +138,7 @@ def inicio():
                 </button>
                 <div class="radar-container">
                     <div id="radarChart"></div>
-                    <div class="status-box" id="debugText">Listo para enlazar el juego. (Precisión 90B)</div>
+                    <div class="status-box" id="debugText">Listo para enlazar el juego. (Precisión Qwen-27B)</div>
                 </div>
             </div>
 
@@ -295,7 +295,7 @@ def inicio():
                             btn.innerHTML = "⚡ Enlazar FM26 y Analizar";
                         };
                         
-                        btn.innerHTML = "⚡ Analizar (Precisión 90B)";
+                        btn.innerHTML = "⚡ Analizar (Precisión Qwen-27B)";
                     }
 
                     status.innerText = "Extrayendo atributos...";
@@ -368,8 +368,3 @@ def inicio():
         </script>
     </body>
     </html>
-    """
-    return render_template_string(html)
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=False)
