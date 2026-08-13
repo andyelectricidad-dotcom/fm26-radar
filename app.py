@@ -1,9 +1,7 @@
 import os
 from flask import Flask, render_template_string, jsonify, request
-from PIL import Image
 import json
 import base64
-import io
 import re
 from google import genai
 from google.genai import types
@@ -22,25 +20,24 @@ def escanear():
         data = request.json
         image_data = data.get("image", "")
         
+        # Separamos la imagen base64 que nos manda el navegador
         header, encoded = image_data.split(",", 1)
         image_bytes = base64.b64decode(encoded)
-        img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
         
-        # Como ya viene recortada del navegador, solo nos aseguramos de que no sea gigante
-        img.thumbnail((1280, 1280), Image.Resampling.LANCZOS)
-        
-        buffered = io.BytesIO()
-        img.save(buffered, format="JPEG", quality=85)
-        optimized_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
-        final_image_url = f"data:image/jpeg;base64,{optimized_base64}"
+        # ⚡ EL BYPASS TOTAL: 
+        # Ya no usamos 'PIL' para abrir ni recomprimir la foto. 
+        # Render ya no hace ningún esfuerzo. Lo mandamos en bruto (RAW bytes) directo a Google.
 
-        # Prompt hiper-directo. Menos palabras = más velocidad.
-        prompt = """Extrae perfil y 36 atributos de FM. Devuelve SOLO JSON puro.
+        # Prompt hiper-minificado para no gastar milisegundos en lectura
+        prompt = """Extrae perfil y 36 atributos de FM26. SOLO JSON puro.
 {"nombre":"","nacionalidad":"","valor":"","edad":"","equipo":"","salario":"","contrato":"","calidad":"","cabeceo":0,"centros":0,"control":0,"entradas":0,"marcaje":0,"pases":0,"regate":0,"remate":0,"tecnica":0,"tiros_lejanos":0,"penaltis":0,"saques_esquina":0,"saques_largos":0,"tiros_libres":0,"agresividad":0,"anticipacion":0,"colocacion":0,"concentracion":0,"decisiones":0,"desmarques":0,"determinacion":0,"juego_equipo":0,"liderazgo":0,"sacrificio":0,"serenidad":0,"talento":0,"valentia":0,"vision":0,"aceleracion":0,"agilidad":0,"salto":0,"equilibrio":0,"fuerza":0,"recuperacion":0,"resistencia":0,"velocidad":0}"""
 
         response = client.models.generate_content(
             model='gemini-flash-latest',
-            contents=[img, prompt],
+            contents=[
+                types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg'),
+                prompt
+            ],
             config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.0),
         )
 
@@ -59,7 +56,7 @@ def inicio():
     <html lang="es">
     <head>
         <meta charset="UTF-8">
-        <title>FM26 - Tactical Web HUD (Sniper Mode)</title>
+        <title>FM26 - Tactical Web HUD (BYPASS)</title>
         <script src="https://d3js.org/d3.v7.min.js"></script>
         <style>
             :root { --bg-main: #06090e; --bg-panel: #0d131d; --accent: #00e6a8; --accent-hover: #00ffbc; --text-main: #e1e4e8; --text-muted: #8b949e; --border: #1f293d; }
@@ -110,7 +107,7 @@ def inicio():
                 <div class="radar-container">
                     <div id="radarChart"></div>
                     <div class="status-box">
-                        <span id="debugText">Listo para enlazar el juego.</span>
+                        <span id="debugText">Listo para enlazar el juego. (Bypass Mode)</span>
                         <span id="statsText" style="color: var(--text-muted);"></span>
                     </div>
                 </div>
@@ -256,23 +253,21 @@ def inicio():
                         btn.innerHTML = "⚡ Analizar al Instante";
                     }
                     
-                    status.innerText = "Recortando a Modo Sniper y enviando a la IA...";
+                    status.innerText = "Bypass activado. Enviando a Google...";
                     const t0 = performance.now();
                     
                     const canvas = document.createElement('canvas');
                     const originalWidth = videoElement.videoWidth;
                     const originalHeight = videoElement.videoHeight;
                     
-                    // ⚡ EL RECORTE DEFINITIVO (4 BANDAS)
-                    const sx = originalWidth * 0.10; // Corta la barra lateral izquierda (menú principal del juego)
-                    const sy = originalHeight * 0.09; // Corta el menú superior (botón de continuar, fecha)
-                    const sw = originalWidth * 0.85; // Mantiene el centro y corta el margen vacío derecho
-                    const sh = originalHeight * 0.65; // Mantiene los datos y corta todo el faldón inferior
+                    const sx = originalWidth * 0.10;
+                    const sy = originalHeight * 0.09;
+                    const sw = originalWidth * 0.85;
+                    const sh = originalHeight * 0.65;
                     
                     canvas.width = sw; 
                     canvas.height = sh;
                     const ctx = canvas.getContext('2d');
-                    
                     ctx.drawImage(videoElement, sx, sy, sw, sh, 0, 0, sw, sh);
                     
                     const res = await fetch('/escanear', {
@@ -291,7 +286,7 @@ def inicio():
                         totalTime += parseFloat(tiempo);
                         const tiempoMedio = (totalTime / scanCount).toFixed(1);
                         
-                        status.innerText = `✅ ¡Análisis Sniper en ${tiempo}s!`;
+                        status.innerText = `✅ ¡Análisis Bypass en ${tiempo}s!`;
                         stats.innerText = `(Media: ${tiempoMedio}s | Total: ${scanCount})`;
                         actualizarUI(response.data);
                     } else {
