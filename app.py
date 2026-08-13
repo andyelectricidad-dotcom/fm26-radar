@@ -73,7 +73,7 @@ def inicio():
             .btn-scan:disabled { filter: grayscale(0.5); cursor: not-allowed; transform: none; }
             .radar-container { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 10px; flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; padding: 20px;}
             #radarChart { width: 100%; height: 100%; max-height: 600px; display: flex; justify-content: center; align-items: center; overflow: visible; }
-            .status-box { position: absolute; bottom: 15px; left: 15px; right: 15px; background: rgba(5,8,13,0.8); border: 1px solid var(--border); padding: 10px 15px; border-radius: 6px; font-family: monospace; font-size: 11px; color: var(--accent); }
+            .status-box { position: absolute; bottom: 15px; left: 15px; right: 15px; background: rgba(5,8,13,0.8); border: 1px solid var(--border); padding: 10px 15px; border-radius: 6px; font-family: monospace; font-size: 11px; color: var(--accent); display: flex; justify-content: space-between; }
             .right-panel { flex: 1; display: flex; gap: 15px; overflow-y: auto; padding-right: 5px;}
             .col { flex: 1; display: flex; flex-direction: column; gap: 15px; }
             .category-box { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 10px; padding: 15px; height: fit-content; }
@@ -104,7 +104,10 @@ def inicio():
                 <button class="btn-scan" onclick="capturarPantalla()" id="btnScan">⚡ Enlazar FM26 y Analizar</button>
                 <div class="radar-container">
                     <div id="radarChart"></div>
-                    <div class="status-box" id="debugText">Listo para enlazar el juego. (Precisión Gemini IA)</div>
+                    <div class="status-box">
+                        <span id="debugText">Listo para enlazar el juego. (Precisión Gemini IA)</span>
+                        <span id="statsText" style="color: var(--text-muted);"></span>
+                    </div>
                 </div>
             </div>
             <div class="right-panel">
@@ -166,6 +169,11 @@ def inicio():
             let videoStream = null;
             const videoElement = document.createElement('video');
             videoElement.autoplay = true;
+            
+            // Variables para el contador de tiempo medio
+            let totalTime = 0;
+            let scanCount = 0;
+
             const inputIds = ['cabeceo', 'centros', 'control', 'entradas', 'marcaje', 'pases', 'regate', 'remate', 'tecnica', 'tiros_lejanos', 'penaltis', 'saques_esquina', 'saques_largos', 'tiros_libres', 'agresividad', 'anticipacion', 'colocacion', 'concentracion', 'decisiones', 'desmarques', 'determinacion', 'juego_equipo', 'liderazgo', 'sacrificio', 'serenidad', 'talento', 'valentia', 'vision', 'aceleracion', 'agilidad', 'salto', 'equilibrio', 'fuerza', 'recuperacion', 'resistencia', 'velocidad'];
             let currentRadarData = {"Defensa":10, "Fisico":10, "Velocidad":10, "Vision":10, "Ataque":10, "Tecnica":10, "Juego Aereo":10, "Mental":10};
             const containerWidth = document.querySelector('.radar-container').clientWidth || 500;
@@ -230,6 +238,7 @@ def inicio():
 
             async function capturarPantalla() {
                 const status = document.getElementById('debugText');
+                const stats = document.getElementById('statsText');
                 const btn = document.getElementById('btnScan');
                 try {
                     btn.disabled = true;
@@ -242,7 +251,7 @@ def inicio():
                         videoStream.getVideoTracks()[0].onended = () => { videoStream = null; btn.innerHTML = "⚡ Enlazar FM26 y Analizar"; };
                         btn.innerHTML = "⚡ Analizar al Instante";
                     }
-                    status.innerText = "Enviando fotograma HD a Gemini...";
+                    status.innerText = "Enviando fotograma a la IA...";
                     const t0 = performance.now();
                     const canvas = document.createElement('canvas');
                     canvas.width = videoElement.videoWidth; canvas.height = videoElement.videoHeight;
@@ -256,9 +265,16 @@ def inicio():
                     const response = await res.json();
                     const t1 = performance.now();
                     const tiempo = ((t1 - t0) / 1000).toFixed(1);
+                    
                     btn.disabled = false; btn.style.opacity = "1";
+                    
                     if(response.status === "ok") {
-                        status.innerText = `✅ ¡Precisión total en ${tiempo}s!`;
+                        scanCount++;
+                        totalTime += parseFloat(tiempo);
+                        const tiempoMedio = (totalTime / scanCount).toFixed(1);
+                        
+                        status.innerText = `✅ ¡Análisis en ${tiempo}s!`;
+                        stats.innerText = `(Media: ${tiempoMedio}s | Total: ${scanCount})`;
                         actualizarUI(response.data);
                     } else {
                         status.innerText = "❌ " + response.message;
