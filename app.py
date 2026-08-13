@@ -212,3 +212,160 @@ def inicio():
                 .attr("width", size).attr("height", size)
                 .attr("viewBox", `0 0 ${size} ${size}`)
                 .style("overflow", "visible")
+                .append("g")
+                .attr("transform", `translate(${size/2},${size/2})`);
+
+            function drawRadar(datos_json) {
+                svg.selectAll("*").remove();
+                const keys = ["Defensa", "Fisico", "Velocidad", "Vision", "Ataque", "Tecnica", "Juego Aereo", "Mental"];
+                const labels = {"Defensa": "Defensa", "Fisico": "Físico", "Velocidad": "Velocidad", "Vision": "Visión", "Ataque": "Ataque", "Tecnica": "Técnica", "Juego Aereo": "Aéreo", "Mental": "Mental"};
+                const data = keys.map(key => ({ axis: key, value: datos_json[key] }));
+                const angleSlice = Math.PI * 2 / data.length;
+                const rScale = d3.scaleLinear().range([0, radius]).domain([0, 20]);
+
+                for (let level = 1; level <= 4; level++) {
+                    let r = radius * (level / 4);
+                    let points = [];
+                    for(let i=0; i<keys.length; i++) {
+                        let a = angleSlice * i - Math.PI / 2;
+                        points.push(`${r * Math.cos(a)},${r * Math.sin(a)}`);
+                    }
+                    svg.append("polygon").attr("points", points.join(" ")).style("fill", "none").style("stroke", "#1f293d").style("stroke-width", "1.5px");
+                }
+                for (let i = 0; i < keys.length; i++) {
+                    let angle = angleSlice * i - Math.PI / 2;
+                    svg.append("line").attr("x1", 0).attr("y1", 0).attr("x2", radius * Math.cos(angle)).attr("y2", radius * Math.sin(angle)).style("stroke", "#1f293d").style("stroke-width", "1.5px");
+                }
+                const radarLine = d3.lineRadial().curve(d3.curveLinearClosed).radius(d => rScale(d.value)).angle((d, i) => i * angleSlice);
+                svg.append("path").datum(data).attr("d", radarLine).style("fill", "rgba(0, 230, 168, 0.25)").style("stroke", "#00e6a8").style("stroke-width", "3px");
+                
+                data.forEach((d, i) => {
+                    const angle = angleSlice * i - Math.PI / 2;
+                    svg.append("circle").attr("cx", rScale(d.value) * Math.cos(angle)).attr("cy", rScale(d.value) * Math.sin(angle)).attr("r", 5).style("fill", "#00e6a8");
+                });
+                data.forEach((d, i) => {
+                    const radAngle = angleSlice * i - Math.PI / 2; 
+                    let dist = radius + 30; 
+                    if (Math.abs(Math.cos(radAngle)) < 0.1) dist = radius + 40; 
+                    const x = dist * Math.cos(radAngle), y = dist * Math.sin(radAngle);
+                    let anchor = "middle";
+                    if (Math.abs(Math.cos(radAngle)) > 0.1) anchor = Math.cos(radAngle) > 0 ? "start" : "end";
+                    const txtGroup = svg.append("text").attr("x", x).attr("y", y).attr("text-anchor", anchor);
+                    txtGroup.append("tspan").attr("x", x).attr("dy", "-0.2em").style("font-size", "14px").style("fill", "#8b949e").style("font-weight", "600").text(labels[d.axis]);
+                    txtGroup.append("tspan").attr("x", x).attr("dy", "1.2em").style("font-size", "18px").style("fill", "#00e6a8").style("font-weight", "900").text(d.value);
+                });
+            }
+
+            function recalcularRadarLocal() {
+                const v = (id) => parseInt(document.getElementById(id).value) || 10;
+                currentRadarData = {
+                    "Defensa": Math.round((v('marcaje') + v('entradas') + v('colocacion')) / 3),
+                    "Fisico": Math.round((v('fuerza') + v('resistencia') + v('equilibrio') + v('recuperacion')) / 4),
+                    "Velocidad": Math.round((v('aceleracion') + v('velocidad') + v('agilidad')) / 3),
+                    "Vision": Math.round((v('vision') + v('anticipacion') + v('decisiones') + v('talento')) / 4),
+                    "Ataque": Math.round((v('remate') + v('desmarques') + v('tiros_lejanos') + v('serenidad')) / 4),
+                    "Tecnica": Math.round((v('tecnica') + v('control') + v('pases') + v('centros') + v('regate')) / 5),
+                    "Juego Aereo": Math.round((v('salto') + v('cabeceo')) / 2),
+                    "Mental": Math.round((v('determinacion') + v('concentracion') + v('liderazgo') + v('valentia') + v('juego_equipo') + v('sacrificio') + v('agresividad')) / 7)
+                };
+                drawRadar(currentRadarData);
+            }
+
+            async function capturarPantalla() {
+                const status = document.getElementById('debugText');
+                const btn = document.getElementById('btnScan');
+                
+                try {
+                    btn.disabled = true;
+                    btn.style.opacity = "0.7";
+
+                    if (!videoStream || !videoStream.active) {
+                        status.innerText = "Selecciona la ventana de Football Manager...";
+                        videoStream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "never" }, audio: false });
+                        videoElement.srcObject = videoStream;
+                        
+                        await new Promise(resolve => videoElement.onplaying = resolve);
+                        
+                        videoStream.getVideoTracks()[0].onended = () => {
+                            videoStream = null;
+                            btn.innerHTML = "⚡ Enlazar FM26 y Analizar";
+                        };
+                        
+                        btn.innerHTML = "⚡ Analizar (Alta Precisión)";
+                    }
+
+                    status.innerText = "Extrayendo atributos...";
+                    const t0 = performance.now();
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width = videoElement.videoWidth;
+                    canvas.height = videoElement.videoHeight;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+                    const base64Image = canvas.toDataURL('image/jpeg', 0.9);
+
+                    const res = await fetch('/escanear', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ image: base64Image })
+                    });
+                    
+                    const response = await res.json();
+                    const t1 = performance.now();
+                    const tiempo = ((t1 - t0) / 1000).toFixed(1);
+
+                    btn.disabled = false;
+                    btn.style.opacity = "1";
+
+                    if(response.status === "ok") {
+                        status.innerText = `✅ ¡Análisis completado en ${tiempo}s!`;
+                        actualizarUI(response.data);
+                    } else {
+                        status.innerText = "❌ Error: " + response.message;
+                    }
+                } catch (err) {
+                    btn.disabled = false;
+                    btn.style.opacity = "1";
+                    videoStream = null;
+                    btn.innerHTML = "⚡ Enlazar FM26 y Analizar";
+                    status.innerText = "⚠️ Error de captura. Vuelve a intentarlo.";
+                }
+            }
+
+            function actualizarUI(data) {
+                document.getElementById('pName').innerText = data.nombre || "---";
+                document.getElementById('pNac').innerText = data.nacionalidad || "---";
+                document.getElementById('pEdad').innerText = data.edad || "---";
+                document.getElementById('pEquipo').innerText = data.equipo || "---";
+                document.getElementById('pCalidad').innerText = data.calidad || "---";
+                document.getElementById('pVal').innerText = data.valor || "---";
+                document.getElementById('pSalario').innerText = data.salario || "---";
+                document.getElementById('pContrato').innerText = data.contrato || "---";
+                
+                inputIds.forEach(id => {
+                    let val = data[id];
+                    if (val !== undefined && val !== "" && val !== null) {
+                        document.getElementById(id).value = val;
+                        document.getElementById('v_' + id).innerText = val;
+                    } else {
+                        document.getElementById('v_' + id).innerText = "-";
+                    }
+                });
+                
+                recalcularRadarLocal();
+            }
+
+            function updateVal(slider, displayId) {
+                document.getElementById(displayId).innerText = slider.value;
+                recalcularRadarLocal();
+            }
+
+            drawRadar(currentRadarData);
+        </script>
+    </body>
+    </html>
+    """
+    return render_template_string(html)
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=False)
