@@ -4,57 +4,74 @@ from PIL import Image
 import json
 import base64
 import io
-from google import genai
-from google.genai import types
+import re
+from groq import Groq
 
 app = Flask(__name__)
 
-# La API Key se lee de forma segura del servidor de Render
-API_KEY = os.environ.get("GEMINI_API_KEY", "")
+API_KEY = os.environ.get("GROQ_API_KEY", "")
 
 client = None
 if API_KEY:
-    client = genai.Client(api_key=API_KEY)
+    client = Groq(api_key=API_KEY)
 
 @app.route('/escanear', methods=['POST'])
 def escanear():
     if not client:
-        return jsonify({"status": "error", "message": "El servidor no tiene configurada la API Key de Gemini."})
+        return jsonify({"status": "error", "message": "El servidor no tiene configurada la API Key de Groq."})
     
     try:
         data = request.json
         image_data = data.get("image", "")
         
-        # Decodificar la imagen que manda el navegador
-        image_data = image_data.split(",")[1]
-        image_bytes = base64.b64decode(image_data)
+        # 1. OPTIMIZACIÓN EXTREMA DE IMAGEN
+        header, encoded = image_data.split(",", 1)
+        image_bytes = base64.b64decode(encoded)
         img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
         
-        # Optimizar tamaño para máxima velocidad
-        img.thumbnail((1920, 1080), Image.Resampling.LANCZOS)
+        # Reducimos a 720p (Sobra para leer texto y es el doble de rápido)
+        img.thumbnail((1280, 720), Image.Resampling.LANCZOS)
+        
+        # Compresión agresiva (60% JPEG) para que viaje rapidísimo por la red
+        buffered = io.BytesIO()
+        img.save(buffered, format="JPEG", quality=60)
+        optimized_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+        final_image_url = f"data:image/jpeg;base64,{optimized_base64}"
 
         prompt = """
-        Analiza esta captura de pantalla de Football Manager. 
-        Extrae la información del perfil y todos los atributos numéricos.
-        Devuelve ÚNICAMENTE un objeto JSON con esta estructura exacta:
+        Analiza esta imagen de Football Manager. Extrae perfil y atributos numéricos (1-20).
+        Devuelve SOLO JSON puro. Sin texto extra. Si no se ve, pon "".
         {
-          "nombre": "...", "nacionalidad": "...", "valor": "...", 
-          "edad": "...", "equipo": "...", "salario": "...", "contrato": "...", "calidad": "...",
+          "nombre": "", "nacionalidad": "", "valor": "", "edad": "", "equipo": "", "salario": "", "contrato": "", "calidad": "",
           "cabeceo": 0, "centros": 0, "control": 0, "entradas": 0, "marcaje": 0, "pases": 0, "regate": 0, "remate": 0, "tecnica": 0, "tiros_lejanos": 0,
           "penaltis": 0, "saques_esquina": 0, "saques_largos": 0, "tiros_libres": 0,
           "agresividad": 0, "anticipacion": 0, "colocacion": 0, "concentracion": 0, "decisiones": 0, "desmarques": 0, "determinacion": 0, "juego_equipo": 0, "liderazgo": 0, "sacrificio": 0, "serenidad": 0, "talento": 0, "valentia": 0, "vision": 0,
           "aceleracion": 0, "agilidad": 0, "salto": 0, "equilibrio": 0, "fuerza": 0, "recuperacion": 0, "resistencia": 0, "velocidad": 0
         }
-        Si algo no se ve, pon "". Calidad puede ser "3 estrellas", etc.
         """
 
-        response = client.models.generate_content(
-            model='gemini-flash-latest',
-            contents=[img, prompt],
-            config=types.GenerateContentConfig(response_mime_type="application/json"),
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": final_image_url}},
+                    ],
+                }
+            ],
+            # 2. EL CAMBIO MÁS IMPORTANTE: Usar el modelo de 11B (Un cohete) en vez del 90B
+            model="llama-3.2-11b-vision-preview",
+            temperature=0,
         )
 
-        return jsonify({"status": "ok", "data": json.loads(response.text)})
+        respuesta_texto = chat_completion.choices[0].message.content
+
+        match = re.search(r'\{.*\}', respuesta_texto, re.DOTALL)
+        if match:
+            respuesta_texto = match.group(0)
+
+        return jsonify({"status": "ok", "data": json.loads(respuesta_texto)})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
 
@@ -65,18 +82,10 @@ def inicio():
     <html lang="es">
     <head>
         <meta charset="UTF-8">
-        <title>FM26 - Tactical Web HUD</title>
+        <title>FM26 - Tactical Web HUD (Fast Mode)</title>
         <script src="https://d3js.org/d3.v7.min.js"></script>
         <style>
-            :root {
-                --bg-main: #06090e;
-                --bg-panel: #0d131d;
-                --accent: #00e6a8;
-                --accent-hover: #00ffbc;
-                --text-main: #e1e4e8;
-                --text-muted: #8b949e;
-                --border: #1f293d;
-            }
+            :root { --bg-main: #06090e; --bg-panel: #0d131d; --accent: #00e6a8; --accent-hover: #00ffbc; --text-main: #e1e4e8; --text-muted: #8b949e; --border: #1f293d; }
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-main); color: var(--text-main); margin: 0; padding: 2vh 2vw; height: 96vh; display: flex; flex-direction: column; }
             .header-panel { background: var(--bg-panel); border: 1px solid var(--border); border-left: 5px solid var(--accent); border-radius: 10px; padding: 20px 25px; margin-bottom: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
             .player-name { font-size: 2.2em; font-weight: 800; color: #fff; margin: 0 0 10px 0; letter-spacing: -0.5px; }
@@ -89,12 +98,7 @@ def inicio():
             .main-layout { display: flex; gap: 20px; flex-grow: 1; min-height: 0; }
             .left-panel { flex: 0 0 45%; display: flex; flex-direction: column; gap: 15px; }
             
-            .btn-scan { 
-                background: linear-gradient(135deg, #00c690 0%, #009970 100%); 
-                color: #000; border: none; padding: 20px; font-size: 18px; font-weight: 800; border-radius: 10px; 
-                cursor: pointer; text-transform: uppercase; letter-spacing: 1px; box-shadow: 0 8px 20px rgba(0, 230, 168, 0.2); 
-                transition: all 0.2s ease; display: flex; justify-content: center; align-items: center; gap: 10px;
-            }
+            .btn-scan { background: linear-gradient(135deg, #00c690 0%, #009970 100%); color: #000; border: none; padding: 20px; font-size: 18px; font-weight: 800; border-radius: 10px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px; box-shadow: 0 8px 20px rgba(0, 230, 168, 0.2); transition: all 0.2s ease; display: flex; justify-content: center; align-items: center; gap: 10px;}
             .btn-scan:hover { background: linear-gradient(135deg, var(--accent-hover) 0%, #00b383 100%); transform: translateY(-2px); }
             .btn-scan:disabled { filter: grayscale(0.5); cursor: not-allowed; transform: none; }
             
@@ -130,11 +134,11 @@ def inicio():
         <div class="main-layout">
             <div class="left-panel">
                 <button class="btn-scan" onclick="capturarPantalla()" id="btnScan">
-                    🔗 Enlazar FM26 y Analizar
+                    ⚡ Enlazar FM26 y Analizar
                 </button>
                 <div class="radar-container">
                     <div id="radarChart"></div>
-                    <div class="status-box" id="debugText">Listo para enlazar el juego.</div>
+                    <div class="status-box" id="debugText">Listo para enlazar el juego. (Modo Ultrarrápido)</div>
                 </div>
             </div>
 
@@ -191,7 +195,6 @@ def inicio():
         </div>
 
         <script>
-            // MEMORIA DE LA VENTANA
             let videoStream = null;
             const videoElement = document.createElement('video');
             videoElement.autoplay = true;
@@ -252,10 +255,8 @@ def inicio():
                 });
             }
 
-            // AHORA EL GRÁFICO SE CALCULA CON LA FÓRMULA INTERNA EXACTA DE FM
             function recalcularRadarLocal() {
                 const v = (id) => parseInt(document.getElementById(id).value) || 10;
-                
                 currentRadarData = {
                     "Defensa": Math.round((v('marcaje') + v('entradas') + v('colocacion')) / 3),
                     "Fisico": Math.round((v('fuerza') + v('resistencia') + v('equilibrio') + v('recuperacion')) / 4),
@@ -266,7 +267,6 @@ def inicio():
                     "Juego Aereo": Math.round((v('salto') + v('cabeceo')) / 2),
                     "Mental": Math.round((v('determinacion') + v('concentracion') + v('liderazgo') + v('valentia') + v('juego_equipo') + v('sacrificio') + v('agresividad')) / 7)
                 };
-                
                 drawRadar(currentRadarData);
             }
 
@@ -278,34 +278,30 @@ def inicio():
                     btn.disabled = true;
                     btn.style.opacity = "0.7";
 
-                    // Si es la primera vez, pide permiso y enlaza la ventana
                     if (!videoStream || !videoStream.active) {
-                        status.innerText = "Selecciona la ventana de Football Manager en el panel que acaba de salir...";
+                        status.innerText = "Selecciona la ventana de Football Manager...";
                         videoStream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: "never" }, audio: false });
                         videoElement.srcObject = videoStream;
                         
-                        // Esperar a que el vídeo esté listo para capturar
                         await new Promise(resolve => videoElement.onplaying = resolve);
                         
-                        // Si el usuario deja de compartir la pantalla desde el aviso del navegador
                         videoStream.getVideoTracks()[0].onended = () => {
                             videoStream = null;
-                            btn.innerHTML = "🔗 Enlazar FM26 y Analizar";
+                            btn.innerHTML = "⚡ Enlazar FM26 y Analizar";
                         };
                         
-                        // Cambiamos el texto del botón para que sepa que ya está enlazado
-                        btn.innerHTML = "📸 Analizar de nuevo (Al instante)";
+                        btn.innerHTML = "⚡ Analizar (Modo Ultrarrápido)";
                     }
 
-                    status.innerText = "Tomando fotograma instantáneo y enviando a la IA...";
+                    status.innerText = "Procesando...";
+                    const t0 = performance.now();
 
-                    // Capturamos el fotograma directamente de la conexión abierta (sin retardo)
                     const canvas = document.createElement('canvas');
                     canvas.width = videoElement.videoWidth;
                     canvas.height = videoElement.videoHeight;
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-                    const base64Image = canvas.toDataURL('image/jpeg', 0.85);
+                    const base64Image = canvas.toDataURL('image/jpeg', 0.9);
 
                     const res = await fetch('/escanear', {
                         method: 'POST',
@@ -314,11 +310,14 @@ def inicio():
                     });
                     
                     const response = await res.json();
+                    const t1 = performance.now();
+                    const tiempo = ((t1 - t0) / 1000).toFixed(1);
+
                     btn.disabled = false;
                     btn.style.opacity = "1";
 
                     if(response.status === "ok") {
-                        status.innerText = "✅ ¡Análisis completado al instante!";
+                        status.innerText = `✅ ¡Completado en ${tiempo} segundos!`;
                         actualizarUI(response.data);
                     } else {
                         status.innerText = "❌ Error: " + response.message;
@@ -327,8 +326,8 @@ def inicio():
                     btn.disabled = false;
                     btn.style.opacity = "1";
                     videoStream = null;
-                    btn.innerHTML = "🔗 Enlazar FM26 y Analizar";
-                    status.innerText = "⚠️ Cancelado o error de captura. Vuelve a intentarlo.";
+                    btn.innerHTML = "⚡ Enlazar FM26 y Analizar";
+                    status.innerText = "⚠️ Error. Vuelve a intentarlo.";
                 }
             }
 
@@ -352,7 +351,6 @@ def inicio():
                     }
                 });
                 
-                // Forzamos el recálculo matemático del radar basándonos en las barras recién actualizadas
                 recalcularRadarLocal();
             }
 
