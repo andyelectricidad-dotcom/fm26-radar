@@ -26,18 +26,16 @@ def escanear():
         image_bytes = base64.b64decode(encoded)
         img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
         
-        # ⚡ EL TRUCO DE VELOCIDAD: Reducimos la imagen drásticamente.
-        # Gemini es tan listo que no necesita 1080p para leer. A 720p vuela.
-        img.thumbnail((1280, 720), Image.Resampling.LANCZOS)
+        # Como ya viene recortada del navegador, solo nos aseguramos de que no sea gigante
+        img.thumbnail((1280, 1280), Image.Resampling.LANCZOS)
         
         buffered = io.BytesIO()
-        # Bajamos la compresión de 95 a 80. La imagen pesará apenas 80KB.
-        img.save(buffered, format="JPEG", quality=80)
+        img.save(buffered, format="JPEG", quality=85)
         optimized_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
         final_image_url = f"data:image/jpeg;base64,{optimized_base64}"
 
-        # ⚡ PROMPT MINIFICADO: Cuanto menos texto lea la IA, más rápido responde.
-        prompt = """Extrae perfil y 36 atributos de FM. Devuelve SOLO JSON.
+        # Prompt hiper-directo. Menos palabras = más velocidad.
+        prompt = """Extrae perfil y 36 atributos de FM. Devuelve SOLO JSON puro.
 {"nombre":"","nacionalidad":"","valor":"","edad":"","equipo":"","salario":"","contrato":"","calidad":"","cabeceo":0,"centros":0,"control":0,"entradas":0,"marcaje":0,"pases":0,"regate":0,"remate":0,"tecnica":0,"tiros_lejanos":0,"penaltis":0,"saques_esquina":0,"saques_largos":0,"tiros_libres":0,"agresividad":0,"anticipacion":0,"colocacion":0,"concentracion":0,"decisiones":0,"desmarques":0,"determinacion":0,"juego_equipo":0,"liderazgo":0,"sacrificio":0,"serenidad":0,"talento":0,"valentia":0,"vision":0,"aceleracion":0,"agilidad":0,"salto":0,"equilibrio":0,"fuerza":0,"recuperacion":0,"resistencia":0,"velocidad":0}"""
 
         response = client.models.generate_content(
@@ -61,7 +59,7 @@ def inicio():
     <html lang="es">
     <head>
         <meta charset="UTF-8">
-        <title>FM26 - Tactical Web HUD (Optimizado)</title>
+        <title>FM26 - Tactical Web HUD (Sniper Mode)</title>
         <script src="https://d3js.org/d3.v7.min.js"></script>
         <style>
             :root { --bg-main: #06090e; --bg-panel: #0d131d; --accent: #00e6a8; --accent-hover: #00ffbc; --text-main: #e1e4e8; --text-muted: #8b949e; --border: #1f293d; }
@@ -177,7 +175,6 @@ def inicio():
             const videoElement = document.createElement('video');
             videoElement.autoplay = true;
             
-            // Variables para el contador de tiempo medio
             let totalTime = 0;
             let scanCount = 0;
 
@@ -256,18 +253,32 @@ def inicio():
                         videoElement.srcObject = videoStream;
                         await new Promise(resolve => videoElement.onplaying = resolve);
                         videoStream.getVideoTracks()[0].onended = () => { videoStream = null; btn.innerHTML = "⚡ Enlazar FM26 y Analizar"; };
-                        btn.innerHTML = "⚡ Analizar (Optimizado)";
+                        btn.innerHTML = "⚡ Analizar al Instante";
                     }
-                    status.innerText = "Analizando fotograma a la velocidad del rayo...";
+                    
+                    status.innerText = "Recortando a Modo Sniper y enviando a la IA...";
                     const t0 = performance.now();
+                    
                     const canvas = document.createElement('canvas');
-                    canvas.width = videoElement.videoWidth; canvas.height = videoElement.videoHeight;
+                    const originalWidth = videoElement.videoWidth;
+                    const originalHeight = videoElement.videoHeight;
+                    
+                    // ⚡ EL RECORTE DEFINITIVO (4 BANDAS)
+                    const sx = originalWidth * 0.10; // Corta la barra lateral izquierda (menú principal del juego)
+                    const sy = originalHeight * 0.09; // Corta el menú superior (botón de continuar, fecha)
+                    const sw = originalWidth * 0.85; // Mantiene el centro y corta el margen vacío derecho
+                    const sh = originalHeight * 0.65; // Mantiene los datos y corta todo el faldón inferior
+                    
+                    canvas.width = sw; 
+                    canvas.height = sh;
                     const ctx = canvas.getContext('2d');
-                    ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+                    
+                    ctx.drawImage(videoElement, sx, sy, sw, sh, 0, 0, sw, sh);
+                    
                     const res = await fetch('/escanear', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ image: canvas.toDataURL('image/jpeg', 0.95) })
+                        body: JSON.stringify({ image: canvas.toDataURL('image/jpeg', 0.85) })
                     });
                     const response = await res.json();
                     const t1 = performance.now();
@@ -280,7 +291,7 @@ def inicio():
                         totalTime += parseFloat(tiempo);
                         const tiempoMedio = (totalTime / scanCount).toFixed(1);
                         
-                        status.innerText = `✅ ¡Análisis en ${tiempo}s!`;
+                        status.innerText = `✅ ¡Análisis Sniper en ${tiempo}s!`;
                         stats.innerText = `(Media: ${tiempoMedio}s | Total: ${scanCount})`;
                         actualizarUI(response.data);
                     } else {
