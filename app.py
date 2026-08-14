@@ -3,6 +3,7 @@ from flask import Flask, render_template_string, jsonify, request
 import json
 import base64
 import re
+import time
 from google import genai
 from google.genai import types
 
@@ -24,22 +25,31 @@ def escanear():
         header, encoded = image_data.split(",", 1)
         image_bytes = base64.b64decode(encoded)
         
-        # ⚡ EL BYPASS TOTAL: 
-        # Ya no usamos 'PIL' para abrir ni recomprimir la foto. 
-        # Render ya no hace ningún esfuerzo. Lo mandamos en bruto (RAW bytes) directo a Google.
-
-        # Prompt hiper-minificado para no gastar milisegundos en lectura
         prompt = """Extrae perfil y 36 atributos de FM26. SOLO JSON puro.
 {"nombre":"","nacionalidad":"","valor":"","edad":"","equipo":"","salario":"","contrato":"","calidad":"","cabeceo":0,"centros":0,"control":0,"entradas":0,"marcaje":0,"pases":0,"regate":0,"remate":0,"tecnica":0,"tiros_lejanos":0,"penaltis":0,"saques_esquina":0,"saques_largos":0,"tiros_libres":0,"agresividad":0,"anticipacion":0,"colocacion":0,"concentracion":0,"decisiones":0,"desmarques":0,"determinacion":0,"juego_equipo":0,"liderazgo":0,"sacrificio":0,"serenidad":0,"talento":0,"valentia":0,"vision":0,"aceleracion":0,"agilidad":0,"salto":0,"equilibrio":0,"fuerza":0,"recuperacion":0,"resistencia":0,"velocidad":0}"""
 
-        response = client.models.generate_content(
-            model='gemini-flash-latest',
-            contents=[
-                types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg'),
-                prompt
-            ],
-            config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.0),
-        )
+        # SISTEMA DE AUTO-REINTENTOS (MAX 3 INTENTOS)
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = client.models.generate_content(
+                    model='gemini-flash-latest',
+                    contents=[
+                        types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg'),
+                        prompt
+                    ],
+                    config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.0),
+                )
+                # Si llega aquí, es que ha funcionado, salimos del bucle
+                break 
+            except Exception as api_error:
+                # Si es un error 503 y no estamos en el último intento, esperamos y reintentamos
+                if "503" in str(api_error) and attempt < max_retries - 1:
+                    time.sleep(1.5) # Esperamos 1.5 segundos antes de volver a llamar a la puerta
+                    continue
+                else:
+                    # Si es otro error o ya hemos gastado los intentos, lanzamos el error
+                    raise api_error
 
         respuesta_texto = response.text
         match = re.search(r'\{.*\}', respuesta_texto, re.DOTALL)
@@ -56,7 +66,7 @@ def inicio():
     <html lang="es">
     <head>
         <meta charset="UTF-8">
-        <title>FM26 - Tactical Web HUD (BYPASS)</title>
+        <title>FM26 - Tactical Web HUD (BYPASS + RETRIES)</title>
         <script src="https://d3js.org/d3.v7.min.js"></script>
         <style>
             :root { --bg-main: #06090e; --bg-panel: #0d131d; --accent: #00e6a8; --accent-hover: #00ffbc; --text-main: #e1e4e8; --text-muted: #8b949e; --border: #1f293d; }
@@ -107,7 +117,7 @@ def inicio():
                 <div class="radar-container">
                     <div id="radarChart"></div>
                     <div class="status-box">
-                        <span id="debugText">Listo para enlazar el juego. (Bypass Mode)</span>
+                        <span id="debugText">Listo para enlazar el juego. (Bypass Mode + Retries)</span>
                         <span id="statsText" style="color: var(--text-muted);"></span>
                     </div>
                 </div>
