@@ -1,7 +1,9 @@
 import os
 from flask import Flask, render_template_string, jsonify, request
+from PIL import Image
 import json
 import base64
+import io
 import re
 import time
 from google import genai
@@ -21,34 +23,42 @@ def escanear():
         data = request.json
         image_data = data.get("image", "")
         
-        # Separamos la imagen base64 que nos manda el navegador
+        # 1. Decodificamos la imagen
         header, encoded = image_data.split(",", 1)
         image_bytes = base64.b64decode(encoded)
+        
+        # 2. OPTIMIZACIÓN ANTI-SIGKILL (Memoria RAM):
+        # Abrimos la imagen y le hacemos un resize rápido y sucio (NEAREST) para no saturar la CPU de Render
+        img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
+        img.thumbnail((1024, 768), Image.Resampling.NEAREST) 
+        
+        # Guardamos en formato WebP (pesa la mitad que el JPEG) para que la subida sea instantánea
+        buffered = io.BytesIO()
+        img.save(buffered, format="WEBP", quality=85)
         
         prompt = """Extrae perfil y 36 atributos de FM26. SOLO JSON puro.
 {"nombre":"","nacionalidad":"","valor":"","edad":"","equipo":"","salario":"","contrato":"","calidad":"","cabeceo":0,"centros":0,"control":0,"entradas":0,"marcaje":0,"pases":0,"regate":0,"remate":0,"tecnica":0,"tiros_lejanos":0,"penaltis":0,"saques_esquina":0,"saques_largos":0,"tiros_libres":0,"agresividad":0,"anticipacion":0,"colocacion":0,"concentracion":0,"decisiones":0,"desmarques":0,"determinacion":0,"juego_equipo":0,"liderazgo":0,"sacrificio":0,"serenidad":0,"talento":0,"valentia":0,"vision":0,"aceleracion":0,"agilidad":0,"salto":0,"equilibrio":0,"fuerza":0,"recuperacion":0,"resistencia":0,"velocidad":0}"""
 
-        # SISTEMA DE AUTO-REINTENTOS (MAX 3 INTENTOS)
         max_retries = 3
         for attempt in range(max_retries):
             try:
+                # 3. SOLUCIÓN AL WARNING DE GOOGLE
+                # Enviamos el buffer directo como objeto compatible
                 response = client.models.generate_content(
                     model='gemini-flash-latest',
                     contents=[
-                        types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg'),
+                        types.Part.from_bytes(data=buffered.getvalue(), mime_type='image/webp'),
                         prompt
                     ],
-                    config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.0),
+                    # Quitamos el modo estricto JSON que causaba el warning, nuestro regex de Python ya lo limpia
+                    config=types.GenerateContentConfig(temperature=0.0),
                 )
-                # Si llega aquí, es que ha funcionado, salimos del bucle
                 break 
             except Exception as api_error:
-                # Si es un error 503 y no estamos en el último intento, esperamos y reintentamos
                 if "503" in str(api_error) and attempt < max_retries - 1:
-                    time.sleep(1.5) # Esperamos 1.5 segundos antes de volver a llamar a la puerta
+                    time.sleep(1.5)
                     continue
                 else:
-                    # Si es otro error o ya hemos gastado los intentos, lanzamos el error
                     raise api_error
 
         respuesta_texto = response.text
@@ -66,7 +76,7 @@ def inicio():
     <html lang="es">
     <head>
         <meta charset="UTF-8">
-        <title>FM26 - Tactical Web HUD (BYPASS + RETRIES)</title>
+        <title>FM26 - Tactical Web HUD (Anti-Crash)</title>
         <script src="https://d3js.org/d3.v7.min.js"></script>
         <style>
             :root { --bg-main: #06090e; --bg-panel: #0d131d; --accent: #00e6a8; --accent-hover: #00ffbc; --text-main: #e1e4e8; --text-muted: #8b949e; --border: #1f293d; }
@@ -117,7 +127,7 @@ def inicio():
                 <div class="radar-container">
                     <div id="radarChart"></div>
                     <div class="status-box">
-                        <span id="debugText">Listo para enlazar el juego. (Bypass Mode + Retries)</span>
+                        <span id="debugText">Listo para enlazar el juego. (WebP Opt)</span>
                         <span id="statsText" style="color: var(--text-muted);"></span>
                     </div>
                 </div>
@@ -263,7 +273,7 @@ def inicio():
                         btn.innerHTML = "⚡ Analizar al Instante";
                     }
                     
-                    status.innerText = "Bypass activado. Enviando a Google...";
+                    status.innerText = "Enviando a Google...";
                     const t0 = performance.now();
                     
                     const canvas = document.createElement('canvas');
@@ -283,7 +293,7 @@ def inicio():
                     const res = await fetch('/escanear', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ image: canvas.toDataURL('image/jpeg', 0.85) })
+                        body: JSON.stringify({ image: canvas.toDataURL('image/jpeg', 0.90) })
                     });
                     const response = await res.json();
                     const t1 = performance.now();
@@ -296,7 +306,7 @@ def inicio():
                         totalTime += parseFloat(tiempo);
                         const tiempoMedio = (totalTime / scanCount).toFixed(1);
                         
-                        status.innerText = `✅ ¡Análisis Bypass en ${tiempo}s!`;
+                        status.innerText = `✅ ¡Análisis en ${tiempo}s!`;
                         stats.innerText = `(Media: ${tiempoMedio}s | Total: ${scanCount})`;
                         actualizarUI(response.data);
                     } else {
