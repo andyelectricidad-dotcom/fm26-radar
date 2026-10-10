@@ -37,7 +37,7 @@ PROMPT = (
     "Imagen de la ficha de un jugador de Football Manager (interfaz en español). "
     "Lee el perfil y los 36 atributos (valores enteros de 1 a 20). "
     "Cada atributo es el numero que aparece junto a su nombre; no mezcles filas ni columnas. "
-    "Presta atencion a 6/16, 8/9, 1/11. "
+    "Cada numero puede ir en amarillo o verde: lee cada digito con cuidado, sobre todo 15 frente a 16, 13 frente a 18 y 6 frente a 8. "
     "Si un dato no se ve, usa 0 para atributos y cadena vacia para el perfil. "
     "Mapeo de nombres: tecnica=Tecnica, tiros_lejanos=Tiros lejanos, saques_esquina=Saques de esquina, "
     "saques_largos=Saques largos, tiros_libres=Tiros libres, juego_equipo=Juego en equipo, "
@@ -114,6 +114,7 @@ def escanear():
             "responseSchema": SCHEMA,
         },
     }
+    payload["generationConfig"]["thinkingConfig"] = {"thinkingBudget": 0}
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
 
     last = ""
@@ -137,6 +138,9 @@ def escanear():
         except ValueError:
             detail = r.text
         last = f"Gemini {r.status_code}: {detail[:200]}"
+        if r.status_code == 400 and "thinking" in detail.lower():
+            payload["generationConfig"].pop("thinkingConfig", None)
+            continue
         if r.status_code in (429, 500, 502, 503, 504) and attempt < 2:
             time.sleep(1.5 * (attempt + 1))
             continue
