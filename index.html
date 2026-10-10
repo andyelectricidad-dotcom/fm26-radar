@@ -73,7 +73,7 @@ input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;bac
       <input type="file" id="file" accept="image/*" hidden>
       <div class="drop" id="drop">o arrastra / pega (Ctrl+V) una captura aquí</div>
       <svg id="radar" viewBox="-215 -185 430 370"></svg>
-      <div class="legend"><span><i style="background:var(--acc)"></i>Actual</span><span id="lgCmp" style="display:none"><i style="background:var(--cmp)"></i><span id="lgName">Fijado</span></span></div>
+      <div class="legend"><span><i style="background:var(--acc)"></i><span id="lgCur">Actual</span></span><span id="lgCmp" style="display:none"><i style="background:var(--cmp)"></i><span id="lgName">Fijado</span></span></div>
       <div id="status">Sube una captura de la ficha de atributos del jugador.</div>
       <img id="thumb" alt="">
     </div>
@@ -105,6 +105,8 @@ const AXES = [
 const $ = id => document.getElementById(id);
 const state = {}; IDS.forEach(i => state[i] = 0);
 let pinned = null, pinnedName = "";
+const RADAR_IDS = ["radar_defensa","radar_fisico","radar_velocidad","radar_vision","radar_ataque","radar_tecnica","radar_aereo","radar_mental"];
+let radarGame = null;
 
 // ---------- UI de atributos ----------
 const gEl = $("groups");
@@ -114,7 +116,7 @@ for (const [title, list] of Object.entries(GROUPS)) {
     `<div class="row zero" id="r_${id}"><label for="s_${id}">${lab}</label><input type="range" id="s_${id}" min="0" max="20" value="0"><output id="o_${id}">-</output></div>`).join("");
   gEl.appendChild(box);
 }
-IDS.forEach(id => $("s_" + id).addEventListener("input", e => { state[id] = +e.target.value; paintRow(id); drawRadar(); }));
+IDS.forEach(id => $("s_" + id).addEventListener("input", e => { state[id] = +e.target.value; paintRow(id); radarGame = null; $("lgCur").textContent = "Calculado con los atributos"; drawRadar(); }));
 function paintRow(id) {
   $("s_" + id).value = state[id];
   $("o_" + id).textContent = state[id] || "-";
@@ -123,6 +125,7 @@ function paintRow(id) {
 
 // ---------- Radar (SVG propio, sin librerías) ----------
 function axisValues() {
+  if (radarGame) return radarGame.slice();
   return AXES.map(([n, keys]) => {
     const vals = keys.map(k => state[k]).filter(v => v > 0);
     return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
@@ -158,6 +161,9 @@ function applyData(d) {
   $("pSal").textContent = d.salario || "---";
   $("pCon").textContent = d.contrato || "---";
   IDS.forEach(id => { state[id] = Math.max(0, Math.min(20, +d[id] || 0)); paintRow(id); });
+  const rv = RADAR_IDS.map(k => Math.max(0, Math.min(20, +d[k] || 0)));
+  radarGame = rv.filter(v => v > 0).length >= 6 ? rv : null;
+  $("lgCur").textContent = radarGame ? "Radar leído del juego" : "Calculado con los atributos";
   drawRadar();
 }
 function setStatus(t, err) { const s = $("status"); s.textContent = t; s.className = err ? "err" : ""; }
@@ -186,7 +192,7 @@ async function analyze(dataUrl) {
     if (j.status !== "ok") { setStatus("❌ " + j.message, true); return; }
     applyData(j.data);
     const miss = IDS.filter(i => !j.data[i]).length;
-    setStatus(`✅ Listo en ${((performance.now() - t0) / 1000).toFixed(1)} s` + (miss ? ` · ${miss} atributos sin leer (naranja): corrígelos a mano` : ""));
+    setStatus(`✅ Listo en ${((performance.now() - t0) / 1000).toFixed(1)} s` + (radarGame ? " · radar copiado del juego" : "") + (miss === IDS.length ? " · esta pantalla no muestra la lista de atributos" : miss ? ` · ${miss} atributos sin leer (naranja): corrígelos a mano` : ""));
   } catch (e) {
     setStatus("⚠️ Sin conexión con el servidor. Reintenta.", true);
   } finally { setBusy(false); }

@@ -22,26 +22,31 @@ ATTRS = [
     "valentia", "vision", "aceleracion", "agilidad", "salto", "equilibrio", "fuerza",
     "recuperacion", "resistencia", "velocidad",
 ]
+RADAR = ["radar_defensa", "radar_fisico", "radar_velocidad", "radar_vision", "radar_ataque", "radar_tecnica", "radar_aereo", "radar_mental"]
 PROFILE = ["nombre", "nacionalidad", "edad", "equipo", "posicion", "calidad", "valor", "salario", "contrato"]
 
 SCHEMA = {
     "type": "OBJECT",
     "properties": {
         **{k: {"type": "STRING"} for k in PROFILE},
-        **{k: {"type": "INTEGER"} for k in ATTRS},
+        **{k: {"type": "INTEGER"} for k in ATTRS + RADAR},
     },
-    "required": PROFILE + ATTRS,
+    "required": PROFILE + ATTRS + RADAR,
 }
 
 PROMPT = (
-    "Imagen de la ficha de un jugador de Football Manager (interfaz en español). "
-    "Lee el perfil y los 36 atributos (valores enteros de 1 a 20). "
-    "Cada atributo es el numero que aparece junto a su nombre; no mezcles filas ni columnas. "
-    "Cada numero puede ir en amarillo o verde: lee cada digito con cuidado, sobre todo 15 frente a 16, 13 frente a 18 y 6 frente a 8. "
-    "Si un dato no se ve, usa 0 para atributos y cadena vacia para el perfil. "
-    "Mapeo de nombres: tecnica=Tecnica, tiros_lejanos=Tiros lejanos, saques_esquina=Saques de esquina, "
-    "saques_largos=Saques largos, tiros_libres=Tiros libres, juego_equipo=Juego en equipo, "
-    "salto=Alcance de salto, recuperacion=Recuperacion fisica."
+    "Imagen de una pantalla de Football Manager (interfaz en español). Devuelve JSON con el perfil y dos bloques de datos. "
+    "REGLA CLAVE: solo transcribe numeros que se vean de verdad en la imagen. NUNCA inventes ni estimes: si algo no se ve, pon 0. "
+    "1) Atributos (36, enteros 1-20): solo si la imagen muestra las listas Tecnico/Mental/Fisico/Balon parado con el numero junto a cada nombre. "
+    "Si esas listas NO aparecen (por ejemplo cuando solo se ve el grafico de radar), pon 0 en los 36. "
+    "Lee cada digito con cuidado, sobre todo 15 frente a 16, 13 frente a 18 y 6 frente a 8. "
+    "Mapeo: tecnica=Tecnica, tiros_lejanos=Tiros lejanos, saques_esquina=Saques de esquina, saques_largos=Saques largos, "
+    "tiros_libres=Tiros libres, juego_equipo=Juego en equipo, salto=Alcance de salto, recuperacion=Recuperacion fisica. "
+    "2) Radar del juego: si la imagen muestra el grafico de radar con ocho etiquetas y un numero junto a cada una "
+    "(Defensa arriba, y en sentido horario Fisico, Velocidad, Vision, Ataque, Tecnica, Aereo, Mental), copia esos ocho numeros en "
+    "radar_defensa, radar_fisico, radar_velocidad, radar_vision, radar_ataque, radar_tecnica, radar_aereo, radar_mental. Si no hay radar, 0. "
+    "Perfil: calidad = estrellas del rol seleccionado (fila resaltada), por ejemplo 2.5 estrellas; "
+    "valor = valor de mercado; salario = texto tal cual aparece; posicion = posicion del jugador."
 )
 
 _lock = threading.Lock()
@@ -68,7 +73,7 @@ def allowed(ip):
 
 def clean(data):
     out = {k: str(data.get(k, "") or "").strip() for k in PROFILE}
-    for k in ATTRS:
+    for k in ATTRS + RADAR:
         try:
             v = int(data.get(k, 0))
         except (TypeError, ValueError):
