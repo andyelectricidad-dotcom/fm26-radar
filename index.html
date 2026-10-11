@@ -214,13 +214,13 @@ const GROUPS = {
 };
 const IDS = Object.values(GROUPS).flat().map(a => a[0]);
 const AXES = [
-  ["Defensa", ["entradas","marcaje","colocacion"]],
-  ["Físico", ["equilibrio","fuerza","recuperacion","resistencia"]],
-  ["Velocidad", ["aceleracion","velocidad"]],
+  ["Defensa", ["entradas","marcaje","colocacion"], 1],
+  ["Físico", ["agilidad","equilibrio","fuerza","resistencia"], 1],
+  ["Velocidad", ["aceleracion","velocidad"], 1],
   ["Visión", ["vision","talento","juego_equipo"]],
   ["Ataque", ["remate","desmarques","pases"]],
-  ["Técnica", ["tecnica","control","regate"]],
-  ["Aéreo", ["cabeceo","salto"]],
+  ["Técnica", ["tecnica","control","regate"], 1],
+  ["Aéreo", ["cabeceo","salto"], 1],
   ["Mental", ["concentracion","decisiones","determinacion","liderazgo","serenidad"]]
 ];
 // posición de cada etiqueta del radar: [x, y del nombre, y del número, alineación]
@@ -266,11 +266,13 @@ function paintRow(id) {
 // ---------- Radar (SVG propio, sin librerías) ----------
 function axisValues() {
   if (radarGame) return radarGame.slice();
-  // Fórmula ajustada con jugadores reales; el juego redondea hacia abajo cuando la media acaba en ,5
-  return AXES.map(([n, keys]) => {
+  // Fórmula ajustada con 9 jugadores reales. Ejes con 3er valor 1: media redondeada hacia abajo;
+  // el resto: media con ,5 hacia abajo.
+  return AXES.map(([n, keys, fl]) => {
     const vals = keys.map(k => state[k]);
     if (vals.some(v => !v)) return 0;
-    return Math.ceil(vals.reduce((a, b) => a + b, 0) / vals.length - 0.5);
+    const m = vals.reduce((a, b) => a + b, 0) / vals.length;
+    return fl ? Math.floor(m) : Math.ceil(m - 0.5);
   });
 }
 function pt(i, v, R = 140) { const a = i * Math.PI / 4 - Math.PI / 2; return [R * v / 20 * Math.cos(a), R * v / 20 * Math.sin(a)]; }
