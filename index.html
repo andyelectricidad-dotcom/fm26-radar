@@ -93,14 +93,14 @@ const GROUPS = {
 };
 const IDS = Object.values(GROUPS).flat().map(a => a[0]);
 const AXES = [
-  ["Defensa", ["marcaje","entradas","colocacion"]],
-  ["Físico", ["fuerza","resistencia","equilibrio","recuperacion"]],
-  ["Velocidad", ["aceleracion","velocidad","agilidad"]],
-  ["Visión", ["vision","anticipacion","decisiones","talento"]],
-  ["Ataque", ["remate","desmarques","tiros_lejanos","serenidad"]],
-  ["Técnica", ["tecnica","control","pases","centros","regate"]],
-  ["Aéreo", ["salto","cabeceo"]],
-  ["Mental", ["determinacion","concentracion","liderazgo","valentia","juego_equipo","sacrificio","agresividad"]]
+  ["Defensa", ["entradas","marcaje","colocacion"]],
+  ["Físico", ["agilidad","equilibrio","fuerza","recuperacion"]],
+  ["Velocidad", ["aceleracion","velocidad"]],
+  ["Visión", ["vision","talento","juego_equipo"]],
+  ["Ataque", ["remate","desmarques","pases"]],
+  ["Técnica", ["tecnica","control","regate"]],
+  ["Aéreo", ["cabeceo","salto"]],
+  ["Mental", ["concentracion","decisiones","determinacion","liderazgo","serenidad"]]
 ];
 const $ = id => document.getElementById(id);
 const state = {}; IDS.forEach(i => state[i] = 0);
@@ -116,7 +116,7 @@ for (const [title, list] of Object.entries(GROUPS)) {
     `<div class="row zero" id="r_${id}"><label for="s_${id}">${lab}</label><input type="range" id="s_${id}" min="0" max="20" value="0"><output id="o_${id}">-</output></div>`).join("");
   gEl.appendChild(box);
 }
-IDS.forEach(id => $("s_" + id).addEventListener("input", e => { state[id] = +e.target.value; paintRow(id); radarGame = null; $("lgCur").textContent = "Calculado con los atributos"; drawRadar(); }));
+IDS.forEach(id => $("s_" + id).addEventListener("input", e => { state[id] = +e.target.value; paintRow(id); radarGame = null; $("lgCur").textContent = "Calculado con los atributos (aprox. del juego)"; drawRadar(); }));
 function paintRow(id) {
   $("s_" + id).value = state[id];
   $("o_" + id).textContent = state[id] || "-";
@@ -126,9 +126,11 @@ function paintRow(id) {
 // ---------- Radar (SVG propio, sin librerías) ----------
 function axisValues() {
   if (radarGame) return radarGame.slice();
+  // Fórmula ajustada con jugadores reales; el juego redondea hacia abajo cuando la media acaba en ,5
   return AXES.map(([n, keys]) => {
-    const vals = keys.map(k => state[k]).filter(v => v > 0);
-    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+    const vals = keys.map(k => state[k]);
+    if (vals.some(v => !v)) return 0;
+    return Math.ceil(vals.reduce((a, b) => a + b, 0) / vals.length - 0.5);
   });
 }
 function pt(i, v, R = 120) { const a = i * 2 * Math.PI / AXES.length - Math.PI / 2; return [R * v / 20 * Math.cos(a), R * v / 20 * Math.sin(a)]; }
@@ -144,7 +146,7 @@ function drawRadar() {
     const [x, y] = pt(i, 20, 147), c = Math.cos(i * 2 * Math.PI / AXES.length - Math.PI / 2);
     const anc = Math.abs(c) < .1 ? "middle" : c > 0 ? "start" : "end";
     s += `<text x="${x}" y="${y - 2}" text-anchor="${anc}" font-size="11" fill="#8b949e" font-weight="600">${n}</text>` +
-         `<text x="${x}" y="${y + 13}" text-anchor="${anc}" font-size="14" fill="#00e6a8" font-weight="800">${vals[i] ? vals[i].toFixed(1).replace(".0", "") : "-"}</text>`;
+         `<text x="${x}" y="${y + 13}" text-anchor="${anc}" font-size="14" fill="#00e6a8" font-weight="800">${vals[i] || "-"}</text>`;
   });
   $("radar").innerHTML = s;
 }
@@ -163,7 +165,7 @@ function applyData(d) {
   IDS.forEach(id => { state[id] = Math.max(0, Math.min(20, +d[id] || 0)); paintRow(id); });
   const rv = RADAR_IDS.map(k => Math.max(0, Math.min(20, +d[k] || 0)));
   radarGame = rv.filter(v => v > 0).length >= 6 ? rv : null;
-  $("lgCur").textContent = radarGame ? "Radar leído del juego" : "Calculado con los atributos";
+  $("lgCur").textContent = radarGame ? "Radar leído del juego" : "Calculado con los atributos (aprox. del juego)";
   drawRadar();
 }
 function setStatus(t, err) { const s = $("status"); s.textContent = t; s.className = err ? "err" : ""; }
